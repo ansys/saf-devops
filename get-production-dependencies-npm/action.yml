@@ -1,0 +1,63 @@
+# Copyright (C) 2026 ANSYS, Inc. and/or its affiliates.
+# SPDX-License-Identifier: Apache-2.0
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: Get production dependencies
+
+description: |
+  Retrieve production dependencies of a Python project using Poetry and upload them as an artifact.
+
+inputs:
+  # Required
+  node-version:
+    description: "Node.js version to use"
+    required: true
+  # Required with defaults
+  npm-parent-directory:
+    description: "Parent directory for the npm project."
+    type: string
+    default: '.'
+  artifact-name:
+    description: "Artifact name"
+    default: "raw_production_dependencies"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Checkout code
+      uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+      with:
+        persist-credentials: false
+
+    - name: Setup node
+      uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6.2.0
+      with:
+        node-version: ${{ inputs.node-version }}
+
+    - name: Get production dependencies
+      working-directory: ${{ inputs.npm-parent-directory }}
+      shell: bash
+      run: |
+        npm ci
+        npm list -a --omit dev --unicode > ${ARTIFACT_NAME}
+      env:
+        ARTIFACT_NAME: ${{ inputs.artifact-name }}.txt
+
+    - name: Publish production_dependencies
+      uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: ${{ inputs.npm-parent-directory }}/${{ inputs.artifact-name }}.txt
+        if-no-files-found: error

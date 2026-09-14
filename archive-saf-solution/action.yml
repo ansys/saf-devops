@@ -1,0 +1,108 @@
+name: Archive SAF solution
+
+description: |
+  Archive SAF solution
+
+inputs:
+  python-version:
+    description: "Python version to use."
+    required: true
+
+  solution-name:
+    description: "Name of the solution to be archived."
+    required: true
+
+  filename:
+    description: "Name of the archive file to create."
+    required: false
+    default: ''
+
+  extension:
+    description: "Extension of the archive to create."
+    required: false
+    default: ".awa"
+
+  git-lfs:
+    description: "Use git-lfs"
+    required: false
+    default: "false"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Checkout code
+      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      with:
+        lfs: ${{ inputs.git-lfs }}
+        path: ${{ inputs.solution-name }}
+        persist-credentials: false
+
+    - name: Set up Python
+      id: setup-python
+      uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Define commands to activate virtual environment and build saf package
+      id: get-commands
+      env:
+        RAW_PYTHON_PATH: ${{ steps.setup-python.outputs.python-path }}
+      shell: bash
+      run: |
+        if [[ "${RUNNER_OS}" == "Windows" ]]; then PYTHON_PATH=$(cygpath -u "${RAW_PYTHON_PATH}"); fi
+        if [[ "${RUNNER_OS}" == "Linux" ]]; then PYTHON_PATH=${RAW_PYTHON_PATH}; fi
+        echo "python-path=$PYTHON_PATH" >> $GITHUB_OUTPUT
+
+        if [[ "${RUNNER_OS}" == "Windows" ]]; then VENV_DIR=.venv/Scripts; fi
+        if [[ "${RUNNER_OS}" == "Linux" ]]; then VENV_DIR=.venv/bin; fi
+        ACTIVATE_VENV_CMD=$VENV_DIR/activate
+        echo "activate-venv-cmd=$ACTIVATE_VENV_CMD" >> $GITHUB_OUTPUT
+
+        if [[ "${RUNNER_OS}" == "Windows" ]]; then SAF_CLI_VENV_DIR=.venv-saf-cli/Scripts; fi
+        if [[ "${RUNNER_OS}" == "Linux" ]]; then SAF_CLI_VENV_DIR=.venv-saf-cli/bin; fi
+
+        echo "saf-cli-venv-dir=$SAF_CLI_VENV_DIR" >> $GITHUB_OUTPUT
+
+    - name: Create Environment with saf-cli
+      env:
+        PYTHON_PATH: ${{ steps.get-commands.outputs.python-path }}
+        SAF_CLI_VENV_DIR: ${{ steps.get-commands.outputs.saf-cli-venv-dir }}
+      shell: bash
+      run: |
+        ${PYTHON_PATH} -m venv .venv-saf-cli
+        ${SAF_CLI_VENV_DIR}/python -m pip install ansys-saf-cli --pre
+
+    - name: Archive the solution
+      env:
+        ACTIVATE_VENV_CMD: ${{ steps.get-commands.outputs.activate-venv-cmd }}
+        SAF_CLI_VENV_DIR: ${{ steps.get-commands.outputs.saf-cli-venv-dir }}
+        SOLUTION_NAME: ${{ inputs.solution-name }}
+        EXTENSION: ${{ inputs.extension }}
+        FILENAME: ${{ inputs.filename != '' && inputs.filename || inputs.solution-name
+          }}
+      shell: bash
+      run: ${SAF_CLI_VENV_DIR}/saf archive ${SOLUTION_NAME} --extension ${EXTENSION}
+        --filename ${FILENAME}
+
+    - name: Publish archive
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      with:
+        name: ${{ inputs.filename != '' && inputs.filename || inputs.solution-name
+          }}
+        path: ${{ inputs.filename != '' && inputs.filename || inputs.solution-name
+          }}${{ inputs.extension }}
+        if-no-files-found: 'error'
+
+    - name: Clean-up environments
+      if: always()
+      env:
+        SOLUTION_NAME: ${{ inputs.solution-name }}
+        FILENAME: ${{ inputs.filename != '' && inputs.filename || inputs.solution-name
+          }}
+        EXTENSION: ${{ inputs.extension }}
+      shell: bash
+      run: |
+        rm -rf .venv-saf-cli
+        rm -rf ${SOLUTION_NAME}
+        rm -rf ${FILENAME}${EXTENSION}
+      continue-on-error: true

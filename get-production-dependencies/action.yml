@@ -1,0 +1,85 @@
+# Copyright (C) 2026 ANSYS, Inc. and/or its affiliates.
+# SPDX-License-Identifier: Apache-2.0
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: Get production dependencies
+
+description: |
+  Retrieve production dependencies of a Python project using Poetry and upload them as an artifact.
+
+inputs:
+  # Required
+  poetry-version:
+    description: "Poetry version to use"
+    required: true
+  python-version:
+    description: "Version of Python to be used."
+    type: string
+    required: true
+  # Required with defaults
+  poetry-parent-directory:
+    description: "Parent directory for the poetry project."
+    type: string
+    default: '.'
+  artifact-name:
+    description: "Artifact name"
+    default: "raw_production_dependencies"
+  # Optional
+  poetry-groups:
+    description: "Poetry groups to include"
+    required: false
+    default: ""
+
+runs:
+  using: "composite"
+  steps:
+    - name: Checkout code
+      uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+      with:
+        persist-credentials: false
+
+    - name: Set up Python
+      id: setup-python
+      uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v6.1.0
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Get production dependencies
+      shell: bash
+      working-directory: ${{ inputs.poetry-parent-directory }}
+      run: |
+        ${PYTHON_PATH} -m pip install --upgrade pip
+        ${PYTHON_PATH} -m pip install poetry==${POETRY_VERSION}
+
+        # Install poetry-plugin-export only for Poetry >=2.x
+        poetry_major_version=$(echo "${POETRY_VERSION}" | cut -d. -f1)
+        if [ "$poetry_major_version" -ge 2 ]; then
+        ${PYTHON_PATH} -m poetry self add poetry-plugin-export
+        fi
+
+        poetry export -f requirements.txt --output ${ARTIFACT_NAME} ${POETRY_GROUPS} --all-extras --without-hashes
+      env:
+        PYTHON_PATH: ${{ steps.setup-python.outputs.python-path }}
+        POETRY_VERSION: ${{ inputs.poetry-version }}
+        POETRY_GROUPS: ${{ inputs.poetry-groups != '' && format('--with {0}', inputs.poetry-groups)
+          || '' }}
+        ARTIFACT_NAME: ${{ inputs.artifact-name }}.txt
+
+    - name: Publish production_dependencies
+      uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: ${{ inputs.poetry-parent-directory }}/${{ inputs.artifact-name }}.txt
+        if-no-files-found: error

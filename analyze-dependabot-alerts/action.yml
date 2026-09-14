@@ -1,0 +1,71 @@
+# Copyright (C) 2026 ANSYS, Inc. and/or its affiliates.
+# SPDX-License-Identifier: Apache-2.0
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: Analyze Dependabot Alerts
+
+description: |
+  Analyze Dependabot alerts for production dependencies of a Python project using Poetry.
+
+inputs:
+  # Required
+  severity-level:
+    description: "Severity level for the analysis"
+    required: true
+  manifest-path:
+    description: "Path to the manifest file"
+    required: true
+  read-dependabot-alerts-token:
+    description: "Token to read Dependabot alerts"
+    required: true
+
+  # Required with defaults
+  artifact-name:
+    description: "Artifact name"
+    default: "raw_production_dependencies"
+  filter-out-non-production-dependencies:
+    description: "Filter out non-production dependencies"
+    default: "true"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Download artifact
+      if: ${{ inputs.filter-out-non-production-dependencies == 'true' }}
+      uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: "raw_production_deps"
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@ed21f2f24f8dd64503750218de024bcf64c7250a # v7.1.5
+      with:
+        ignore-empty-workdir: true
+        cache-dependency-glob: '${{ github.action_path}}/requirements.txt'
+
+    - name: Create virtual environment and install dependencies
+      shell: bash
+      run: |
+        uv venv .venv --python 3.12 --clear
+        uv pip install -r ${GITHUB_ACTION_PATH}/requirements.txt
+        uv run "${GITHUB_ACTION_PATH}/analyze_dependabot_alerts.py"
+      env:
+        GITHUB_TOKEN: ${{ inputs.read-dependabot-alerts-token }}
+        GITHUB_REPOSITORY: ${{ github.repository }}
+        GITHUB_REF: ${{ github.ref }}
+        SEVERITY_LEVEL: ${{ inputs.severity-level }}
+        MANIFEST_PATH: "${{ inputs.manifest-path }}"
+        FILTER_OUT_NON_PRODUCTION_DEPENDENCIES: ${{ inputs.filter-out-non-production-dependencies
+          }}

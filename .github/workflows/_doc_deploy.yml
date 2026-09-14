@@ -1,0 +1,165 @@
+# Copyright (C) 2026 ANSYS, Inc. and/or its affiliates.
+# SPDX-License-Identifier: Apache-2.0
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: _doc_deploy
+
+on:
+  workflow_call:
+    inputs:
+      gh-pages-cname:
+        description: "CNAME record for the gh-pages branch."
+        type: string
+        required: true
+      gh-pages-doc-artifact-name:
+        description: "Name of the gh-pages documentation artifact name."
+        type: string
+        required: true
+      poetry-parent-directory:
+        description: "Parent directory for the poetry project."
+        type: string
+        default: '.'
+      ref:
+        description: "Reference to checkout"
+        type: string
+        required: false
+        default: ''
+      version:
+        description: ""
+        required: false
+        default: ''
+        type: string
+      repository:
+        description: "Repository name"
+        type: string
+        required: false
+        default: ''
+    secrets:
+      TOKEN:
+        description: "GitHub token"
+        required: false
+
+permissions: {}
+
+jobs:
+
+  validate-inputs-doc-deploy:
+    name: Validate inputs for doc deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate version input
+        id: validate-version
+        run: |
+          if [[ -n "${VERSION}" ]]; then
+            if ! [[ "${VERSION}" =~ ^[0-9]+\.[0-9]+$ ]]; then
+                echo "::error::[validate-version] ❌ version input must be in the format X.Y (e.g., 1.2); got '${VERSION}'"
+              exit 1
+            fi
+          fi
+        env:
+          VERSION: ${{ inputs.version }}
+
+  get-version-doc-type:
+    name: Get version and doc type
+    permissions:
+      contents: read # To read the repository content
+    needs:
+      - validate-inputs-doc-deploy
+    runs-on: ubuntu-latest
+    outputs:
+      version-type: ${{ steps.get-version.outputs.version-type }}
+    steps:
+      - name: Checkout actions
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref != '' && inputs.ref || github.ref }}
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          pip install --upgrade pip
+          pip install toml==0.10.2
+
+      - id: get-version
+        shell: python
+        run: |
+          import toml
+          import os
+
+          file_path= os.getenv('FILE_PATH')
+
+          with open(file_path, 'r') as toml_file:
+            toml_data = toml.load(toml_file)
+
+          # try PEP 621 format first (), then fallback to poetry format
+          try:
+            version = toml_data.get("project").get("version")
+          except AttributeError:
+            print("[get-version] 🔍 PEP 621 format not found, trying poetry format")
+            version = toml_data.get("tool").get("poetry").get("version")
+
+          print(f"[get-version] 🔍 Retrieved version: {version}")
+
+          if 'dev' in version:
+            version_type = 'dev'
+          else:
+            version_type = 'stable'
+          print(f"[get-version] 🔍 Get version type: {version_type}")
+
+          with open(os.getenv('GITHUB_OUTPUT'), 'a') as fh:
+            print(f'version-type={version_type}\n', file=fh)
+        env:
+          FILE_PATH: ${{ inputs.poetry-parent-directory }}/pyproject.toml
+
+  deploy-doc:
+    permissions:
+      contents: write # Required to push to gh-pages branch
+    needs:
+      - validate-inputs-doc-deploy
+      - get-version-doc-type
+    name: Documentation deployment
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy dev doc
+        if: needs.get-version-doc-type.outputs.version-type == 'dev'
+        uses: ansys/actions/doc-deploy-dev@3ad3b285bd9b67045477dafc7f9865a3aa39f692 # v11.0.6
+        with:
+          cname: ${{ inputs.gh-pages-cname }}
+          token: ${{ secrets.TOKEN != '' && secrets.TOKEN || github.token }}
+          doc-artifact-name: ${{ inputs.gh-pages-doc-artifact-name }}
+          bot-user: "github-actions"
+          bot-email: "github-actions@github.com"
+          repository: ${{ inputs.repository != '' && inputs.repository || github.repository
+            }}
+
+      - name: Deploy stable doc
+        if: needs.get-version-doc-type.outputs.version-type == 'stable'
+        uses: ansys/saf-devops/doc-deploy-stable@v1
+        with:
+          cname: ${{ inputs.gh-pages-cname }}
+          token: ${{ secrets.TOKEN != '' && secrets.TOKEN || github.token }}
+          render-last: "5"
+          doc-artifact-name: ${{ inputs.gh-pages-doc-artifact-name }}
+          bot-user: "github-actions"
+          bot-email: "github-actions@github.com"
+          version: ${{ inputs.version }}
+          repository: ${{ inputs.repository != '' && inputs.repository || github.repository
+            }}

@@ -1,0 +1,430 @@
+# Copyright (C) 2026 ANSYS, Inc. and/or its affiliates.
+# SPDX-License-Identifier: Apache-2.0
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: |
+  Doc deploy stable action
+
+description: |
+  This action deploys the desired HTML documentation artifact containing the
+  stable version of a library to the specified branch of a repository. By
+  default, the ``gh-pages`` branch of the current repository is assumed.
+
+  .. note::
+
+      If your project is using ``ansys/actions@v3`` or lower and you would
+      like to update to this version of the actions, see the `Enable multi-version documentation <https://dev.docs.pyansys.com/how-to/documenting.html#enable-multi-version-documentation>`_ .
+
+inputs:
+
+  # Required inputs
+
+  cname:
+    description: |
+      The canonical name (CNAME) containing the documentation.
+    required: true
+
+  token:
+    description: |
+      Required password, key or token with the correct credentials for deploying the
+      documentation. If deploying to the current repository, the ``github.token`` token is
+      is enough. For workflows deploying to other repositories, `generate and
+      use a token with writing access
+      <https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/creating-a-personal-access-token>`_
+      to that repository.
+    required: true
+
+  bot-user:
+    description: |
+      Use the PYANSYS_CI_BOT_USERNAME as the user for a git commit & push.
+    required: true
+
+  bot-email:
+    description: |
+      Use the PYANSYS_CI_BOT_EMAIL as the email for a git commit & push.
+    required: true
+
+  # Optional inputs
+
+  doc-artifact-name:
+    description: |
+      Name of the HTML documentation artifact. This artifact is expected to
+      contain all the HTML and static files. If it contains a compressed file,
+      make sure you enable the ``decompress-artifact`` option.
+    required: false
+    default: 'documentation-html'
+
+  decompress-artifact:
+    description: |
+      Whether to decompress the ``doc-artifact-name`` file using `ouch
+      <https://github.com/ouch-org/ouch>`_ as decompression tool. Default value
+      is ``false``.
+    required: false
+    default: 'false'
+
+  repository:
+    description: |
+      Repository name in the form of ``username/repository`` to be used for
+      deploying the documentation. The current repository is assumed by default.
+    required: false
+    default: ''
+
+  branch:
+    description: |
+      Branch name for deploying the documentation. The ``gh-pages`` branch is
+      used by default.
+    required: false
+    default: 'gh-pages'
+
+  commit-message:
+    description: |
+      Commit message used when deploying the documentation.
+    required: false
+    default: 'DOC: update development documentation'
+
+  render-last:
+    description: |
+      The number of stable versions to be shown in the `version drop-down
+      <https://pydata-sphinx-theme.readthedocs.io/en/stable/user_guide/version-dropdown.html>`_.
+    default: '3'
+    required: false
+
+  force-orphan:
+    description: |
+      Whether to force the deployment branch to be orphan or not. Default value
+      is ``true``.
+    required: false
+    default: 'true'
+
+  content-element-id:
+    description: |
+      Identifier of the HTML tag that comprises all the content of the article
+      or post.
+    required: false
+    default: 'main-content'
+
+  independent-patch-release-docs:
+    description: |
+      Whether to generate documentation for independent patch releases. Default
+      value is ``false``. By default, patch releases will overwrite the
+      documentation of the previous patch release. If this option is enabled,
+      then the documentation of each patch release will be kept.
+    required: false
+    default: 'false'
+
+  use-latest-index-in-landing-page:
+    description: |
+      Use the latest 'version/{stable|dev}/index.html' in the landing page. Default
+      value is ``true``. By default, the index.html is overwritten by version/{stable|dev}/index.html.
+    required: false
+    default: 'true'
+
+  version:
+    description: ""
+    required: true
+
+  skip-dev-version:
+    description: |
+      Whether to skip the development version when generating the
+      ``versions.json`` file. Default value is ``false``.
+    required: false
+    default: 'false'
+
+runs:
+  using: "composite"
+  steps:
+    - name: "Checkout repository"
+      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      with:
+        repository: ${{ inputs.repository != '' && inputs.repository || github.repository
+          }}
+        token: ${{ inputs.token }}
+        persist-credentials: true
+
+    - name: "Ensure that the desired branch exists"
+      shell: bash
+      env:
+        BRANCH: ${{ inputs.branch }}
+        BOT_USER: ${{ inputs.bot-user }}
+        BOT_MAIL: ${{ inputs.bot-email }}
+        GITHUB_TOKEN: ${{ inputs.token }}
+      run: |
+        # Check the ${BRANCH} branch exists on remote
+        branch_exists=$(git ls-remote --heads origin refs/heads/${BRANCH} 2>&1)
+
+        # If the ${BRANCH} doesn't exist, then print error message and exit 1
+        if [ -z "$branch_exists" ]; then
+          echo "The ${BRANCH} branch does not exist. Creating ${BRANCH}."
+
+          # Create orphan branch
+          git checkout --orphan ${BRANCH}
+
+          # Unstage files to be committed
+          git rm --cached -r .
+
+          # Remove untracked files
+          git clean -fd
+
+          # Configure git username & email
+          git config user.name ${BOT_USER}
+          git config user.email ${BOT_MAIL}
+
+          # Commit ${BRANCH} & push to origin
+          git commit --allow-empty -m "Create ${BRANCH} branch"
+          git push -u origin ${BRANCH}
+        else
+          # Fetch and switch to ${BRANCH}
+          git fetch origin ${BRANCH}:${BRANCH}
+          git switch ${BRANCH}
+        fi
+
+    - name: "Clean version content"
+      shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+      run: |
+        if [ -d version/${VERSION} ]; then
+          echo "VERSION_EXISTS=true" >> $GITHUB_ENV
+        else
+          echo "VERSION_EXISTS=false" >> $GITHUB_ENV
+        fi
+        rm -rf version/${VERSION} && mkdir -p version/${VERSION}
+
+    - name: "Download the stable documentation artifact"
+      uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3 # v8.0.0
+      with:
+        name: ${{ inputs.doc-artifact-name }}
+        path: version/${{ inputs.version }}
+
+    - name: "Update apt-get"
+      shell: bash
+      run: |
+        sudo apt-get update
+
+    - name: "Decompress artifact content"
+      shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+      if: inputs.decompress-artifact == 'true'
+      run: |
+        sudo apt-get install -y cargo && cargo install ouch
+        export PATH="$HOME/.cargo/bin/:$PATH"
+        ouch --version
+        cd version/${VERSION} && compressed_artifact=$(ls .)
+        ouch decompress $compressed_artifact
+        decompressed_artifact=$(ls -I "*${compressed_artifact##*.}")
+        mv $decompressed_artifact/* .
+        rm -rf $compressed_artifact $decompressed_artifact
+
+    - name: "Display structure of version/dev"
+      shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+      run: |
+        ls -R version/${VERSION}
+
+    - name: "Install 'sponge' and 'jq' for manipulating JSON files"
+      shell: bash
+      run: |
+        sudo apt-get install -y moreutils jq
+
+    - name: "Create a clean 'versions.json' file"
+      shell: bash
+      run: |
+        rm -rf versions.json && touch versions.json && echo '[]' > versions.json
+
+    - name: "Add the development version to the 'versions.json' file"
+      if: ${{ inputs.skip-dev-version == 'false' }}
+      shell: bash
+      env:
+        CNAME: ${{ inputs.cname }}
+      run: |
+        url_dev="https://${CNAME}/version/dev/"
+        jq --arg url $url_dev '. += [{"name": "dev", "version": "dev", "url": $url}]' versions.json | sponge versions.json
+        cat versions.json
+
+    - name: "Populate the 'versions.json' file with the desired amount of versions"
+      shell: bash
+      env:
+        RENDER_LAST: ${{ inputs.render-last }}
+        CNAME: ${{ inputs.cname }}
+      run: |
+        for version in $( ls version | \
+                          grep -E "^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(\..*)?$" | \
+                          sort -r --version-sort | \
+                          head -${RENDER_LAST}); do
+          url="https://${CNAME}/version/$version/"
+          jq --arg version $version --arg url $url '. += [{"name": $version, "version": $version, "url": $url}]' < versions.json | sponge versions.json
+        done
+
+        cat versions.json
+
+    - name: "Add an 'Older versions' item if required"
+      shell: bash
+      env:
+        CNAME: ${{ inputs.cname }}
+        RENDER_LAST: ${{ inputs.render-last }}
+      run: |
+        num_versions=$(jq length versions.json)
+
+        if [ $num_versions -gt ${RENDER_LAST} ]; then
+          cname=${CNAME}
+          new_item="{ \"name\": \"Older versions\", \"version\": \"N/A\", \"url\": \"https://$cname/version/\" }"
+          jq ". + [$new_item]" versions.json > tmp.json && mv tmp.json versions.json
+        fi
+
+    - name: "Convert the first stable version into the 'stable' one"
+      shell: bash
+      env:
+        CNAME: ${{ inputs.cname }}
+        STABLE_VERSION_INDEX: ${{ inputs.skip-dev-version == 'false' && '1' || '0'
+          }}
+      run: |
+        jq ".[${STABLE_VERSION_INDEX}].name += \" (stable)\"" versions.json | sponge versions.json
+        url_stable="https://${CNAME}/version/stable/"
+        jq --arg url $url_stable ".[${STABLE_VERSION_INDEX}].url = \$url" versions.json | sponge versions.json
+        cat versions.json
+
+    - name: "Find the latest stable version"
+      shell: bash
+      env:
+        STABLE_VERSION_INDEX: ${{ inputs.skip-dev-version == 'false' && '1' || '0'
+          }}
+      run: | # zizmor: ignore[github-env] - trusted usage for environment variables
+        stable_version=$(jq ".[${STABLE_VERSION_INDEX}].version" versions.json | grep -o '".*"' | sed 's/"//g')
+        echo "LATEST_STABLE_VERSION=$stable_version" >> $GITHUB_ENV
+
+    - name: "Update the content for the 'version/stable' folder"
+      shell: bash
+      run: |
+        rm -rf version/stable && cp -r version/${LATEST_STABLE_VERSION} version/stable
+
+    - name: "Generate the template content for the 'announcement.html' file"
+      # ------------------------------------------------------------------------
+
+      shell: bash
+      run: |
+        cat > announcement.html <<'EOF'
+          <p>
+            You are not viewing the most recent version of this documentation.
+            The latest stable release is <a href="STABLE_URL">LATEST_STABLE_VERSION</a>
+          </p>
+        EOF
+
+    - name: "Render the 'announcement.html' template with the desired stable version"
+      shell: bash
+      env:
+        CNAME: ${{ inputs.cname }}
+      run: |
+        latest_stable_version=${LATEST_STABLE_VERSION}
+        stable_url="https://${CNAME}/version/stable/"
+        sed -i "s|LATEST_STABLE_VERSION|$latest_stable_version|g" announcement.html
+        sed -i "s|STABLE_URL|$stable_url|g" announcement.html
+
+    - name: "Place the 'announcement.html' file in every public folder of all the
+        outdated versions"
+      shell: bash
+      run: |
+        for version_dir in $( ls version | \
+                          grep -E "^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(\..*)?$" | \
+                          grep -v "${LATEST_STABLE_VERSION}" | \
+                          sort -r --version-sort ); do
+            find version/$version_dir -type d -not \( -path "*/_*" -type d -prune \) -exec cp announcement.html {} \;
+        done
+
+    - name: "Delete the 'announcement.html' file used as template"
+      shell: bash
+      run: |
+        rm -rf announcement.html
+
+    - name: "Include link canonical tag in pages"
+      uses: ansys/actions/_doc-gen-canonical@7d55ff0b9f67c77dae50a286d711ee1ae27b0a25 # v10.2.12
+      with:
+        cname: ${{ inputs.cname }}
+        version-directory: version
+
+    - name: "Use the latest 'version/{stable|dev}/index.html' in the landing page"
+      if: ${{ inputs.use-latest-index-in-landing-page == 'true' }}
+      shell: bash
+      run: |
+        if [[ -f 'version/stable/index.html' ]]; then
+          cp version/stable/index.html index.html
+          sed -i 's/href="\([^:"]*\)"/href="version\/stable\/\1"/g' index.html
+          sed -i 's/src="\([^:"]*\)"/src="version\/stable\/\1"/g' index.html
+          sed -i 's/action="search.html"/action="version\/stable\/search.html"/g' index.html
+          sed -i 's|const SEARCH_FILE = ".*_static/search.json";|const SEARCH_FILE = "version/stable/_static/search.json";|g' index.html
+          sed -i '/const ADVANCE_SEARCH_PATH = "search.html";/s|search.html|version/stable/search.html|' index.html
+          sed -i 's|<html lang="en" data-content_root="./" >|<html lang="en" data-content_root="./version/stable/" >|g' index.html
+        else
+          echo "Error: No 'index.html' file found in version/stable." >&2
+          exit 1
+        fi
+
+    - name: "Show the contents of the 'index.html' redirection file"
+      shell: bash
+      run: |
+        if [[ -f 'index.html' ]]; then
+          cat index.html
+        else
+          echo "Error: The 'index.html' file does not exist." >&2
+          exit 1
+        fi
+
+    - uses: ansys/actions/_doc-gen-versions-page@7d55ff0b9f67c77dae50a286d711ee1ae27b0a25 # v10.2.12
+      with:
+        cname: ${{ inputs.cname }}
+        content-element-id: ${{ inputs.content-element-id }}
+
+    - name: "Create '.nojekyll' and 'CNAME' files"
+      shell: bash
+      env:
+        CNAME: ${{ inputs.cname }}
+      run: |
+        touch .nojekyll CNAME
+        echo "${CNAME}" > CNAME
+
+    - name: "Generate 'sitemap.xml' file"
+      uses: ansys/actions/_doc-gen-sitemap@7d55ff0b9f67c77dae50a286d711ee1ae27b0a25 # v10.2.12
+      with:
+        cname: ${{ inputs.cname }}
+        html-directory: version/stable
+
+    - name: "Generate 'robots.txt' file"
+      uses: ansys/actions/_doc-gen-robots@7d55ff0b9f67c77dae50a286d711ee1ae27b0a25 # v10.2.12
+      with:
+        cname: ${{ inputs.cname }}
+
+    - name: "Deploy to ${{ inputs.branch }} branch of ${{ github.repository }} repository"
+      if: inputs.repository == 'current'
+      uses: peaceiris/actions-gh-pages@4f9cc6602d3f66b9c108549d475ec49e8ef4d45e # v4.0.0
+      with:
+        publish_dir: .
+        publish_branch: ${{ inputs.branch }}
+        github_token: ${{ inputs.token }}
+        commit_message: ${{ inputs.commit-message }}
+        keep_files: true
+        force_orphan: ${{ inputs.force-orphan }}
+
+    - name: "Deploy to ${{ inputs.branch }} branch of ${{ inputs.repository }}"
+      if: inputs.repository != 'current'
+      uses: peaceiris/actions-gh-pages@4f9cc6602d3f66b9c108549d475ec49e8ef4d45e # v4.0.0
+      with:
+        publish_dir: .
+        publish_branch: ${{ inputs.branch }}
+        personal_token: ${{ inputs.token }}
+        external_repository: ${{ inputs.repository }}
+        commit_message: ${{ inputs.commit-message }}
+        keep_files: true
+        force_orphan: ${{ inputs.force-orphan }}

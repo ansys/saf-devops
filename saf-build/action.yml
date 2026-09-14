@@ -1,0 +1,549 @@
+# Copyright (C) 2026 ANSYS, Inc. and/or its affiliates.
+# SPDX-License-Identifier: Apache-2.0
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: Build
+
+description: Install the package dependencies and generate a distribution.
+
+inputs:
+  artifact-name:
+    description: "Name of the artifact in the CI session."
+    required: true
+
+  build-result:
+    description: "Output of the build process. Can be wheel, package or executable."
+    required: false
+    default: "wheel"
+
+  dependencies-source:
+    description: "Location where build dependencies are declared (build-system or
+      requirements-file)."
+    required: false
+    default: "build-system"
+
+  display-console-window:
+    description: "Enable GLOW desktop shortcut to execute solution with/without console
+      window appearing."
+    required: false
+    default: "true"
+
+  extra-artifact-name:
+    description: "Name of artifact for extra files"
+    required: false
+    default: ""
+
+  extra-artifacts:
+    description: "Arbitrary extra files/folders to be uploaded as an artifact"
+    required: false
+    default: ""
+
+  git-lfs:
+    description: "Set to 'true' to enable large file storage in git when checking
+      out the underlying repository"
+    required: false
+    default: "false"
+
+  mustache-template:
+    description: "Enable/Disable rendering any configured mustache templates"
+    required: false
+    default: "false"
+
+  mustache-template-path:
+    description: "Path to the JSON file with input parameters for mustache template"
+    required: false
+    default: ".github\\workflows\\placeholders.json"
+
+  mustache-template-json:
+    description: "Dynamic JSON populated with values from the GitHub workflow contexts"
+    required: false
+    default: "{'sha': '${{github.sha}}'}"
+
+  node-package-manager:
+    description: "Node package manager."
+    required: false
+    default: "npm"
+
+  node-version:
+    description: "Version of NodeJs to be used."
+    required: false
+    default: "18.x"
+
+  npm-artifactory:
+    description: "Artifactory npm repository."
+    required: false
+    default: ""
+
+  npm-auth-token:
+    description: "NPM authentication token."
+    required: false
+    default: ""
+
+  obfuscate:
+    description: "Enable/Disable obfuscation."
+    required: false
+    default: "false"
+
+  encrypt-wheel:
+    description: "Enable/Disable wheel encryption."
+    required: false
+    default: "false"
+
+  offline-package:
+    description: "Create a package that can be installed offline."
+    required: false
+    default: "false"
+
+  package-data-artifact:
+    description: "Name of the additional data to add to the wheelhouse."
+    required: false
+    default: ""
+
+  package-data-path:
+    description: "Path to target directory within src."
+    required: false
+    default: ""
+
+  post-build-command:
+    description: "Arbitrary external script/command to be executed after build is
+      finished"
+    required: false
+    default: ""
+
+  python-version:
+    description: "Version of Python to be used."
+    required: true
+
+  poetry-version:
+    description: "Version of Poetry to be used."
+    required: true
+
+  solution-display-name:
+    description: "Display name of the solution."
+    required: false
+    default: ""
+
+  solution-entry-point:
+    description: |
+      The main solution entry point to start the solution.
+      Module should be a dotted import ('ansys.solutions.mysoln.main').
+      If not provided, the solution will be run with the default entry point.
+    required: false
+    default: ""
+
+  solution-ui-framework:
+    description: "UI framework of the solution."
+    required: false
+    default: "dash"
+
+  working-directory:
+    description: "Working directory."
+    required: false
+    default: "."
+
+  poetry-install-args:
+    description: "Arguments to be passed to 'poetry install' command."
+    required: false
+    default: "--only main -vv"
+
+  saf-cli-reference:
+    description: "Reference of saf-cli to use."
+    required: false
+    default: "ansys-saf-cli"
+
+  saf-cli-package-path:
+    description: "Path to the saf-cli package within its repository, when 'saf-cli-reference'
+      points to a repo where the package is not at the root (e.g. 'packages/saf-cli'
+      subdirectory)."
+    required: false
+    default: ""
+
+  additional-saf-build-args:
+    description: "Additional arguments to be passed to the saf build command."
+    required: false
+    default: ""
+
+  build-dependencies-groups:
+    description: "Dependency groups to be installed for build dependencies."
+    required: false
+    default: "build"
+
+  poetry-plugin-export-version:
+    description: "Specific version for poetry-plugin-export."
+    required: false
+    default: "1.9.0"
+
+  checkout:
+    description: "Whether to checkout the repository."
+    required: false
+    default: true
+    type: boolean
+
+runs:
+  using: "composite"
+  steps:
+    - name: Checkout project
+      if: ${{ inputs.checkout == 'true' }}
+      uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+      with:
+        lfs: ${{ inputs.git-lfs }}
+        persist-credentials: false
+
+    - name: Setup Python
+      id: setup-python-step
+      uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v6.1.0
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Download package data artifact from CI session
+      if: ${{ inputs.package-data-artifact != '' }}
+      uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+      with:
+        name: ${{ inputs.package-data-artifact }}
+        path: ${{ inputs.package-data-path }}
+
+    - name: Setup NodeJs
+      if: ${{ inputs.solution-ui-framework != 'dash' }}
+      uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6.2.0
+      with:
+        node-version: ${{ inputs.node-version }}
+
+    - name: Install package manager if needed
+      if: ${{ inputs.solution-ui-framework != 'dash' }}
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        NODE_PACKAGE_MANAGER: "${{ inputs.node-package-manager }}"
+      shell: bash
+      run: |
+        if [[ "${NODE_PACKAGE_MANAGER}" == "yarn" ]]; then
+          corepack enable
+          corepack prepare yarn@stable --activate
+        elif [[ "${NODE_PACKAGE_MANAGER}" == "pnpm" ]]; then
+          corepack enable
+          corepack prepare pnpm@stable --activate
+        else
+          echo "Using npm as package manager"
+        fi
+
+    - name: Setup .yarnrc.yml
+      if: ${{ inputs.solution-ui-framework != 'dash' && inputs.node-package-manager
+        == 'yarn' }}
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        NPM_ARTIFACTORY: "${{ inputs.npm-artifactory }}"
+        NPM_AUTH_TOKEN: "${{ inputs.npm-auth-token }}"
+      shell: bash
+      run: |
+        if [[ ! -z "${NPM_ARTIFACTORY}" ]]; then
+          if [[  -z "${NPM_AUTH_TOKEN}" ]]; then
+              yarn config set npmScopes.ansys.npmRegistryServer ${NPM_ARTIFACTORY}
+            else
+              yarn config set npmScopes.ansys.npmRegistryServer ${NPM_ARTIFACTORY}
+              yarn config set npmScopes.ansys.npmAlwaysAuth true
+              yarn config set npmScopes.ansys.npmAuthToken ${NPM_AUTH_TOKEN}
+            fi
+          fi
+
+    - name: Setup .npmrc
+      if: ${{ inputs.solution-ui-framework != 'dash' && (inputs.node-package-manager
+        == 'npm' || inputs.node-package-manager == 'pnpm') }}
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        NPM_ARTIFACTORY: "${{ inputs.npm-artifactory }}"
+        NPM_AUTH_TOKEN: "${{ inputs.npm-auth-token }}"
+      shell: bash
+      run: |
+        if [[ -z "${NPM_AUTH_TOKEN}" ]]; then
+          npm config set "@ansys:registry" ${NPM_ARTIFACTORY}
+        else
+          registry=$(echo ${NPM_ARTIFACTORY} | sed -e 's/^https\?:\/\///' -e 's/^/\/\//')
+          echo "$registry:_authToken=${NPM_AUTH_TOKEN}" > .npmrc
+        fi
+
+    - name: Build non-dash stack for UI via <solution-name>/tools/build.py
+      if: ${{ inputs.solution-ui-framework != 'dash' }}
+      working-directory: ${{ inputs.working-directory }}
+      shell: bash
+      run: |
+        python ../tools/build.py
+
+    - uses: ansys/saf-devops/prepare-python-environment@v1
+      id: prepare-python
+      with:
+        python-version: ${{ inputs.python-version }}
+        poetry-version: ${{ inputs.poetry-version }}
+        poetry-install-args: ''
+        python-project-path: ${{ inputs.working-directory }}
+
+    - name: Define commands to activate virtual environment and build saf package
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        SAF_CLI_REF: "${{ inputs.saf-cli-reference }}"
+        SAF_CLI_PACKAGE_PATH: "${{ inputs.saf-cli-package-path }}"
+        VENV_DIR: ${{ runner.os == 'Windows' && '.venv/Scripts' || '.venv/bin' }}
+        ACTIVATE_VENV_CMD: ${{ runner.os == 'Windows' && '.venv/Scripts/activate'
+          || '.venv/bin/activate' }}
+        SAF_CLI_VENV_DIR: ${{ runner.os == 'Windows' && '.venv-saf-cli/Scripts' ||
+          '.venv-saf-cli/bin' }}
+      shell: bash
+      run: |
+        python -m venv .venv-saf-cli
+
+        SAF_CLI_TARGET="${SAF_CLI_REF}"
+        if [[ -n "${SAF_CLI_PACKAGE_PATH}" ]]; then
+          SAF_CLI_TARGET="${SAF_CLI_REF}#subdirectory=${SAF_CLI_PACKAGE_PATH}"
+        fi
+        ${SAF_CLI_VENV_DIR}/python -m pip install "${SAF_CLI_TARGET}"
+
+        case "${RUNNER_OS}" in
+          "Windows")
+            echo "SAF_CMD=.venv-saf-cli/Scripts/saf build" >> $GITHUB_ENV
+            ;;
+          "Linux")
+            echo "SAF_CMD=.venv-saf-cli/bin/saf build" >> $GITHUB_ENV
+            ;;
+          *)
+            echo "Invalid combination: ${RUNNER_OS}" >&2
+            exit 1
+            ;;
+        esac
+
+    - name: Install production dependencies
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        ACTIVATE_VENV_CMD: ${{ runner.os == 'Windows' && '.venv/Scripts/activate'
+          || '.venv/bin/activate' }}
+        POETRY_INSTALL_ARGS: ${{ inputs.poetry-install-args }}
+      shell: bash
+      run: |
+        source ${ACTIVATE_VENV_CMD}
+        poetry install ${POETRY_INSTALL_ARGS}
+
+    - name: Install build dependencies
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        ACTIVATE_VENV_CMD: ${{ runner.os == 'Windows' && '.venv/Scripts/activate'
+          || '.venv/bin/activate' }}
+        DEPENDENCY_SOURCE: ${{ inputs.dependencies-source }}
+        BUILD_DEPENDENCIES_GROUPS: ${{ inputs.build-dependencies-groups }}
+      shell: bash
+      run: |
+        source ${ACTIVATE_VENV_CMD}
+
+        # Normalize separators: convert commas to spaces for uniform processing
+        NORMALIZED_SOURCE=$(echo "${DEPENDENCY_SOURCE}" | tr ',' ' ')
+
+        # Validate that dependency source contains only build-system and/or requirements-file
+        if ! [[ "${NORMALIZED_SOURCE}" =~ ^(build-system|requirements-file)( (build-system|requirements-file))*$ ]]; then
+          echo "Unknown source of build dependencies: ${DEPENDENCY_SOURCE}"
+          echo "Must contain 'build-system' and/or 'requirements-file' (comma separated if both, no spaces)."
+          exit 1
+        fi
+
+        if [[ "${NORMALIZED_SOURCE}" =~ build-system ]]; then
+          ui_group=$(grep -q '^\[tool\.poetry\.group\.ui\.' pyproject.toml && echo ",ui" || echo "")
+          build_dependencies="${BUILD_DEPENDENCIES_GROUPS},desktop${ui_group},doc"
+          echo "Installing build dependencies from groups: $build_dependencies"
+          poetry install --only "$build_dependencies" -vv
+        fi
+
+        if [[ "${NORMALIZED_SOURCE}" =~ requirements-file ]]; then
+          echo "Installing build dependencies from requirements file"
+          python -m pip install -r requirements/requirements_build.txt
+        fi
+
+    - name: Render mustache template(s)
+      if: ${{ inputs.mustache-template == 'true' }}
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        MUSTACHE_TEMPLATE_JSON: ${{ inputs.mustache-template-json }}
+        MUSTACHE_TEMPLATE_PATH: ${{ inputs.mustache-template-path }}
+      shell: pwsh
+      run: $env:GITHUB_ACTION_PATH/apply_mustache_templates.ps1 -extra "$env:MUSTACHE_TEMPLATE_JSON"
+        -placeholders "$env:MUSTACHE_TEMPLATE_PATH"
+
+    - name: Run post-build command
+      if: ${{ inputs.post-build-command != '' }}
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        POST_BUILD_COMMAND: ${{ inputs.post-build-command }}
+      shell: pwsh
+      run: $env:POST_BUILD_COMMAND
+
+    - name: Build wheel
+      working-directory: ${{ inputs.working-directory }}
+      shell: bash
+      env:
+        ACTIVATE_VENV_CMD: ${{ runner.os == 'Windows' && '.venv/Scripts/activate'
+          || '.venv/bin/activate' }}
+      run: |
+        source ${ACTIVATE_VENV_CMD}
+
+        poetry build
+
+    - name: Export requirements to txt file
+      working-directory: ${{ inputs.working-directory }}
+      shell: bash
+      env:
+        ACTIVATE_VENV_CMD: ${{ runner.os == 'Windows' && '.venv/Scripts/activate'
+          || '.venv/bin/activate' }}
+        PLUGIN_VERSION: ${{ inputs.poetry-plugin-export-version }}
+      run: |
+        source ${ACTIVATE_VENV_CMD}
+        poetry self add poetry-plugin-export@${PLUGIN_VERSION}
+        poetry export --without-hashes --format requirements.txt | grep -v "extra-index-url" > requirements.txt
+
+    - name: Check if package will render correctly in PyPI
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        ACTIVATE_VENV_CMD: ${{ runner.os == 'Windows' && '.venv/Scripts/activate'
+          || '.venv/bin/activate' }}
+      shell: bash
+      run: |
+        source ${ACTIVATE_VENV_CMD}
+        poetry run python -m twine check dist/*
+
+    - name: Check if package installation works fine
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        ACTIVATE_VENV_CMD: ${{ runner.os == 'Windows' && '.venv/Scripts/activate'
+          || '.venv/bin/activate' }}
+      shell: bash
+      run: |
+        source ${ACTIVATE_VENV_CMD}
+        python -m pip install dist/*.whl -r requirements.txt
+
+    - name: Move requirements.txt to dist folder
+      working-directory: ${{ inputs.working-directory }}
+      shell: bash
+      run: mv requirements.txt dist/
+
+    - name: Build arguments for packaging
+      id: resolve-package-arguments
+      if: ${{ inputs.build-result == 'package' || inputs.build-result == 'executable'
+        }}
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        DISPLAY_CONSOLE_WINDOW: "${{ inputs.display-console-window }}"
+        SOLUTION_DISPLAY_NAME: "${{ inputs.solution-display-name }}"
+        OBFUSCATE: "${{ inputs.obfuscate }}"
+        ENCRYPT_WHEEL: "${{ inputs.encrypt-wheel }}"
+        OFFLINE_PACKAGE: "${{ inputs.offline-package }}"
+        BUILD_RESULT: "${{ inputs.build-result }}"
+        ADDITIONAL_SAF_BUILD_ARGS: "${{ inputs.additional-saf-build-args }}"
+        SOLUTION_ENTRY_POINT: "${{ inputs.solution-entry-point }}"
+        SOLUTION_UI_FRAMEWORK: "${{ inputs.solution-ui-framework }}"
+      shell: bash
+      run: |
+        arguments=""
+        if [[ "${DISPLAY_CONSOLE_WINDOW}" == "true" ]]; then
+          arguments="--display-console-window"
+        fi
+        if [[ "${OBFUSCATE}" == "true" ]]; then
+          arguments+=" --obfuscate"
+        fi
+
+        if [[ "${ENCRYPT_WHEEL}" == "true" ]]; then
+            arguments+=" --encrypt"
+            arguments+=" --encryption-file obfuscate.txt"
+          fi
+
+        if [[ "${OFFLINE_PACKAGE}" == "true" ]]; then
+          arguments+=" --offline-package"
+        fi
+
+        if [[ "${SOLUTION_ENTRY_POINT}" != "" ]]; then
+          arguments+=" --solution-entry-point ${SOLUTION_ENTRY_POINT}"
+        fi
+        if [[ "${SOLUTION_UI_FRAMEWORK}" != "" ]]; then
+          arguments+=" --solution-ui-framework ${SOLUTION_UI_FRAMEWORK}"
+        fi
+
+        if [[ -n "${ADDITIONAL_SAF_BUILD_ARGS}"  ]]; then
+          arguments+=" ${ADDITIONAL_SAF_BUILD_ARGS}"
+        fi
+
+        echo package-arguments=$arguments >> $GITHUB_OUTPUT
+
+    - name: Build package
+      if: ${{ inputs.build-result == 'package' }}
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        SAF_CLI_VENV_DIR: ${{ runner.os == 'Windows' && '.venv-saf-cli/Scripts' ||
+          '.venv-saf-cli/bin' }}
+        PACKAGE_ARGUMENTS: "${{ steps.resolve-package-arguments.outputs.package-arguments
+          }}"
+      shell: bash
+      run: ${SAF_CLI_VENV_DIR}/saf build --no-executable ${PACKAGE_ARGUMENTS}
+
+    - name: Build executable
+      if: ${{ inputs.build-result == 'executable' }}
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        SAF_CLI_VENV_DIR: ${{ runner.os == 'Windows' && '.venv-saf-cli/Scripts' ||
+          '.venv-saf-cli/bin' }}
+        PACKAGE_ARGUMENTS: "${{ steps.resolve-package-arguments.outputs.package-arguments
+          }}"
+      shell: bash
+      run: ${SAF_CLI_VENV_DIR}/saf build ${PACKAGE_ARGUMENTS}
+
+    - name: Upload requirements to CI session
+      uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+      with:
+        name: ${{ inputs.artifact-name }}-requirements
+        path: ${{ inputs.working-directory }}/dist/requirements.txt
+
+    - name: Upload wheel to CI session
+      uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+      with:
+        name: ${{ inputs.artifact-name }}-wheel
+        path: ${{ inputs.working-directory }}/dist/*.whl
+
+    - name: Upload package to CI session
+      if: ${{ inputs.build-result == 'package' || inputs.build-result == 'executable'
+        }}
+      uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+      with:
+        name: ${{ inputs.artifact-name }}-packaged-installer
+        path: ${{ inputs.working-directory }}/dist/solution/*
+        include-hidden-files: true
+
+    - name: Upload executable to CI session
+      if: ${{ inputs.build-result == 'executable' }}
+      uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+      with:
+        name: ${{ inputs.artifact-name }}-executable-installer
+        path: ${{ inputs.working-directory }}/dist/*-installer*
+        include-hidden-files: true
+
+    - name: Upload extra files to CI session
+      uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+      if: ${{ inputs.extra-artifacts != '' }}
+      with:
+        name: ${{ inputs.extra-artifact-name }}
+        path: ${{ inputs.extra-artifacts }}
+        include-hidden-files: true
+
+    - name: Delete virtual environments
+      working-directory: ${{ inputs.working-directory }}
+      shell: bash
+      run: |
+        rm -rf .venv
+        rm -rf .poetry
+
+    - name: Delete saf-cli virtual environments
+      working-directory: ${{ inputs.working-directory }}
+      shell: bash
+      run: rm -rf .venv-saf-cli

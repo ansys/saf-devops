@@ -1,0 +1,86 @@
+# Copyright (C) 2026 ANSYS, Inc. and/or its affiliates.
+# SPDX-License-Identifier: Apache-2.0
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: Check documentation for broken links
+
+description: |
+  This action checks the documentation for broken links.
+
+inputs:
+  build-directory:
+    description: "Directory to build the documentation."
+    required: true
+  linkcheckerrc-file:
+    description: "Path to the linkchecker configuration file."
+    required: true
+  report-artifact-name:
+    description: "Name of the report artifact."
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+    - name: Install uv
+      uses: astral-sh/setup-uv@ed21f2f24f8dd64503750218de024bcf64c7250a # v7.1.5
+      with:
+        ignore-empty-workdir: true
+        cache-dependency-glob: '${{ github.action_path}}/requirements.txt'
+
+    - name: Check for broken links in documentation
+      shell: bash
+      run: |
+        uv venv .venv-${GITHUB_RUN_ID} --python 3.12
+        uv pip install --python .venv-${GITHUB_RUN_ID}/${VENV_SUBDIRECTORY}/python -r ${GITHUB_ACTION_PATH}/requirements.txt
+        source .venv-${GITHUB_RUN_ID}/${VENV_SUBDIRECTORY}/activate
+
+        # Run linkchecker and capture the exit code
+        set +e
+        linkchecker \
+          --config ${LINKCHECKERRC_FILE} \
+          ${BUILD_DIRECTORY} \
+          --output=none \
+          --file-output=html/utf_8/linkcheck-report.html \
+          --ignore-url .*/_static/webpack-macros\.html$ \
+          --ignore-url ^https://img\.shields\.io/.*$ \
+          --ignore-url ^.*\.css$ \
+          --ignore-url https://github.com/${GITHUB_REPOSITORY}
+        exit_code=$?
+        set -e
+
+        # Handle LinkChecker exit codes appropriately
+        # 0 = success, 1 = warnings found, 2 = errors found
+        if [ $exit_code -eq 2 ]; then
+          echo "::error title=LinkChecker::❌ LinkChecker found broken links, please verify the linkcheck-report in the artifacts"
+          exit 2
+        elif [ $exit_code -eq 1 ]; then
+          echo "::warning title=LinkChecker::⚠️ LinkChecker found warnings (redirects, etc.), please verify the linkcheck-report in the artifacts."
+          exit 0
+        else
+          echo "✅ LinkChecker completed successfully with no issues"
+          exit 0
+        fi
+      env:
+        LINKCHECKERRC_FILE: ${{ inputs.linkcheckerrc-file }}
+        BUILD_DIRECTORY: ${{ inputs.build-directory }}
+        VENV_SUBDIRECTORY: ${{ runner.os == 'Linux' && 'bin' || 'Scripts' }}
+
+    - name: Upload linkcheck report artifact
+      if: always()
+      uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+      with:
+        name: linkcheck-report
+        path: linkcheck-report.*
+        overwrite: true

@@ -1,0 +1,80 @@
+# Copyright (C) 2026 ANSYS, Inc. and/or its affiliates.
+# SPDX-License-Identifier: Apache-2.0
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: Check tag and commit
+
+description: |
+  Check if the given tag exists and the commit is tagged with it.
+
+inputs:
+  tag:
+    description: "Tag to check"
+    required: true
+  raise-error-on-untagged-commit:
+    description: "Raise an error if the commit is not tagged"
+    required: false
+    default: "false"
+outputs:
+  tag-exists:
+    description: "Does the tag exist?"
+    value: ${{ steps.check_tag.outputs.exists }}
+  commit-is-already-tagged:
+    description: "Is the commit already tagged?"
+    value: ${{ steps.already_tagged.outputs.is_tagged }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Checkout code
+      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      with:
+        fetch-depth: 0
+        persist-credentials: false
+
+    - name: Check if tag exists
+      id: check_tag
+      uses: mukunku/tag-exists-action@5c39604fe8aef7e65acb6fbcf96ec580f7680313 # v1.7.0
+      with:
+        tag: ${{ inputs.tag }}
+
+    - name: Check if commit is already tagged
+      id: already_tagged
+      shell: bash
+      run: |
+        if [[ "${TAG_EXISTS}" == 'true' ]]; then
+          commit=$(git log -1)
+          tag_commit=$(git rev-list -n 1 ${TAG})
+
+          if [[ $commit == *"$tag_commit"* ]]; then
+            echo "commit is already tagged"
+            echo "is_tagged=true" >> $GITHUB_OUTPUT
+          else
+            echo "commit is not tagged"
+            echo "is_tagged=false" >> $GITHUB_OUTPUT
+          fi
+        else
+          echo "is_tagged=false" >> $GITHUB_OUTPUT
+        fi
+      env:
+        TAG_EXISTS: ${{ steps.check_tag.outputs.exists }}
+        TAG: ${{ inputs.tag }}
+
+    - name: Raise error
+      if: inputs.raise_error_on_untagged_commit == 'true' && steps.already_tagged.outputs.is_tagged
+        == 'false'
+      shell: bash
+      run: |
+        exit 1

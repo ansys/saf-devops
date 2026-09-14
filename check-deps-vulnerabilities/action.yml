@@ -1,0 +1,138 @@
+# Copyright (C) 2026 ANSYS, Inc. and/or its affiliates.
+# SPDX-License-Identifier: Apache-2.0
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: |
+  "Check library and third-party vulnerabilities."
+
+description: |
+  Action actively checking for library and third party vulnerabilities by
+  means of the `safety <https://pyup.io/safety/>`_ Python package.
+
+inputs:
+  python-version:
+    description: "Python version to use."
+    required: true
+    type: string
+  poetry-version:
+    description: "Poetry version to use."
+    required: true
+    type: string
+  poetry-install-args:
+    description: Additional arguments to pass to the `poetry install` command.
+    default: ''
+    required: false
+    type: string
+  upgrade-pip:
+    description: "Whether to upgrade pip before installing dependencies."
+    required: false
+    default: "false"
+    type: boolean
+  max-allowed-severity:
+    description: "Maximum allowed severity for vulnerabilities."
+    required: false
+    type: string
+    default: "none"
+  poetry-parent-directory:
+    description: "Parent directory for the poetry project."
+    type: string
+    default: '.'
+  poetry-plugin-export-version:
+    description: "Specific version for poetry-plugin-export."
+    required: false
+    type: string
+    default: "1.9.0"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Checkout repository
+      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      with:
+        persist-credentials: false
+
+    - uses: ansys/saf-devops/prepare-python-environment@v1
+      id: prepare-python-environment
+      with:
+        python-version: ${{ inputs.python-version }}
+        poetry-version: ${{ inputs.poetry-version }}
+        poetry-install-args: ""
+        python-project-path: ${{ inputs.poetry-parent-directory }}
+
+    - name: Upgrade pip
+      if: ${{ inputs.upgrade-pip == 'true' }}
+      working-directory: ${{ inputs.poetry-parent-directory }}
+      shell: bash
+      env:
+        PYTHON_CMD: ${{ steps.prepare-python-environment.outputs.python-cmd }}
+      run: ${PYTHON_CMD} -m pip install --upgrade pip
+
+    - name: Install poetry export plugin and export dependencies
+      shell: bash
+      working-directory: ${{ inputs.poetry-parent-directory }}
+      env:
+        POETRY_CMD: ${{ steps.prepare-python-environment.outputs.poetry-cmd }}
+        POETRY_INSTALL_ARGS: ${{ inputs.poetry-install-args }}
+        POETRY_PLUGIN_EXPORT_VERSION: ${{ inputs.poetry-plugin-export-version }}
+      run: |
+        ${POETRY_CMD} self add poetry-plugin-export@${POETRY_PLUGIN_EXPORT_VERSION}
+        ${POETRY_CMD} export -f requirements.txt --output dependencies.txt ${POETRY_INSTALL_ARGS} --without-hashes
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@ed21f2f24f8dd64503750218de024bcf64c7250a # v7.1.5
+      with:
+        ignore-empty-workdir: true
+        cache-dependency-glob: '${{ github.action_path}}/requirements.txt'
+
+    - name: Install safety
+      shell: bash
+      env:
+        UV_PROJECT_ENVIRONMENT: ${{ runner.temp }}/.venv_safety
+      run: |
+        uv venv "${UV_PROJECT_ENVIRONMENT}" --python 3.12
+        uv pip install --python "${UV_PROJECT_ENVIRONMENT}/bin/python" -r "${GITHUB_ACTION_PATH}/requirements.txt"
+
+    - name: Run safety
+      shell: bash
+      working-directory: ${{ inputs.poetry-parent-directory }}
+      env:
+        POLICY_FILE_ARG: ${{ hashFiles('.safety-ignore.yml') && '.safety-ignore.yml'
+          || format('{0}/default_policy.yml', github.action_path) }}
+        REPORT_FILE: info_safety.json
+        UV_PROJECT_ENVIRONMENT: ${{ runner.temp }}/.venv_safety
+      run: |
+        ${UV_PROJECT_ENVIRONMENT}/bin/safety check -o bare --policy-file ${POLICY_FILE_ARG} --save-json ${REPORT_FILE} --continue-on-error -r dependencies.txt 2>&1 \
+          | grep -v -E '^\+==|^$|DEPRECATED:.*has been DEPRECATED|encourage switching to the new'
+      continue-on-error: true
+
+    - name: Analyze results and fail if vulnerabilities exceed the maximum allowed
+        severity
+      shell: bash
+      working-directory: ${{ inputs.poetry-parent-directory }}
+      env:
+        REPORT_FILE: info_safety.json
+        MAX_ALLOWED_SEVERITY: ${{ inputs.max-allowed-severity }}
+        UV_PROJECT_ENVIRONMENT: ${{ runner.temp }}/.venv_safety
+      run: |
+        "${UV_PROJECT_ENVIRONMENT}/bin/python" "${GITHUB_ACTION_PATH}/safety_check.py" --output "${REPORT_FILE}" --max-allowed-severity "${MAX_ALLOWED_SEVERITY}"
+
+    - name: Remove report file
+      shell: bash
+      if: always()
+      working-directory: ${{ inputs.poetry-parent-directory }}
+      env:
+        REPORT_FILE: info_safety.json
+      run: |
+        rm -f ${REPORT_FILE}

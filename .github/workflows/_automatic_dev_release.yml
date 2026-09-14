@@ -1,0 +1,182 @@
+# Copyright (C) 2026 ANSYS, Inc. and/or its affiliates.
+# SPDX-License-Identifier: Apache-2.0
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: automatic DEV release
+
+permissions: {}
+on:
+  workflow_call:
+    inputs:
+      python-version:
+        description: "Python version to use."
+        type: string
+        required: true
+      # Required
+      poetry-version:
+        description: "Poetry version to use."
+        required: true
+        type: string
+      # Required with default
+      poetry-parent-directory:
+        description: "Parent directory for the poetry project."
+        type: string
+        default: '.'
+      # Optional
+      gh-pages-cname:
+        description: "CNAME record for the gh-pages branch."
+        type: string
+        required: false
+        default: ''
+      poetry-install-args:
+        description: "Additional arguments for poetry install when building docs."
+        type: string
+        required: false
+        default: '--only doc -vv'
+      env-vars:
+        description: "Additional environment variables. Format: 'var-1: val-1\nvar-2:
+          val-2' (YAML-like format)"
+        type: string
+        required: false
+        default: ""
+    outputs:
+      release-name:
+        description: "Release name"
+        value: ${{ jobs.release-information.outputs.release-name }}
+    secrets:
+      PYANSYS_PRIVATE_PYPI_PAT:
+        description: "Personal Access Token for private PyPI"
+        required: false
+      PYANSYS_PRIVATE_PYPI_URL:
+        description: "URL for private PyPI"
+        required: false
+      BUMP_VERSION_TOKEN:
+        description: "Token to bump the version"
+        required: false
+      PYANSYS_CI_BOT_EMAIL:
+        description: "Email for the bot account used to create PR. Default: actions@github.com"
+        required: false
+      PYANSYS_CI_BOT_USERNAME:
+        description: "Username for the bot account used to create PR. Default: actions"
+        required: false
+      PYANSYS_CI_BOT_TOKEN:
+        description: "Token for the bot account used to create PR."
+        required: false
+
+jobs:
+  release-information:
+    permissions:
+      contents: read
+    name: Release Information
+    outputs:
+      release-name: ${{ steps.retrieve-release-info.outputs.release-name }}
+      version-to-bump-in-triggering-branch: ${{ steps.retrieve-release-info.outputs.version-to-bump-in-triggering-branch
+        }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Retrieve release information
+        id: retrieve-release-info
+        uses: ansys/saf-devops/retrieve-release-information@v1
+        with:
+          poetry-parent-directory: ${{ inputs.poetry-parent-directory }}
+          release-type: "dev"
+
+  generate-release-notes:
+    permissions:
+      contents: read
+      pull-requests: read # To get merged PRs for release notes generation
+    name: Generate Release Notes
+    needs:
+      - release-information
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate release notes
+        uses: ansys/saf-devops/generate-release-notes@v1
+        with:
+          tag-name: ${{ needs.release-information.outputs.release-name }}
+
+  prepare-release:
+    permissions:
+      contents: write # To create the release page in GitHub
+    name: Prepare Release
+    needs:
+      - release-information
+      - generate-release-notes
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Download release notes artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-notes
+          path: release-notes
+
+      - name: Create release
+        id: create-release
+        run: |
+          gh release create ${RELEASE_NAME} --title ${RELEASE_NAME} --notes-file release-notes/release_notes.md --prerelease --target main
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_NAME: ${{ needs.release-information.outputs.release-name }}
+
+  release-package:
+    name: Release Package
+    permissions:
+      attestations: write # Write attestation for uploaded distribution artifacts
+      contents: write # Required to push to gh-pages branch
+      id-token: write # Write access to a temporary token for signing attestations
+    needs:
+      - release-information
+      - prepare-release
+    uses: ansys/saf-devops/.github/workflows/_release.yml@v1
+    with:
+      python-version: ${{ inputs.python-version }}
+      poetry-version: ${{ inputs.poetry-version }}
+      release-name: ${{ needs.release-information.outputs.release-name }}
+      release-branch: 'main'
+      poetry-parent-directory: ${{ inputs.poetry-parent-directory }}
+      gh-pages-cname: ${{ inputs.gh-pages-cname }}
+      poetry-install-args: ${{ inputs.poetry-install-args }}
+      env-vars: ${{ inputs.env-vars }}
+    secrets:
+      PYANSYS_PRIVATE_PYPI_PAT: ${{ secrets.PYANSYS_PRIVATE_PYPI_PAT }}
+      PYANSYS_PRIVATE_PYPI_URL: ${{ secrets.PYANSYS_PRIVATE_PYPI_URL }}
+
+  bump-version:
+    name: Bump Version
+    permissions:
+      contents: write # Create commits to bump version
+      pull-requests: write # Create pull requests to bump version
+    needs:
+      - release-information
+      - prepare-release
+      - release-package
+    uses: ansys/saf-devops/.github/workflows/_bump_version.yml@v1
+    with:
+      python-version: ${{ inputs.python-version }}
+      poetry-version: ${{ inputs.poetry-version }}
+      new-version: ${{ needs.release-information.outputs.version-to-bump-in-triggering-branch
+        }}
+      base-ref: 'main'
+      poetry-parent-directory: ${{ inputs.poetry-parent-directory }}
+    secrets:
+      BUMP_VERSION_TOKEN: ${{ secrets.BUMP_VERSION_TOKEN }}
+      PYANSYS_CI_BOT_EMAIL: ${{ secrets.PYANSYS_CI_BOT_EMAIL }}
+      PYANSYS_CI_BOT_USERNAME: ${{ secrets.PYANSYS_CI_BOT_USERNAME }}
+      PYANSYS_CI_BOT_TOKEN: ${{ secrets.PYANSYS_CI_BOT_TOKEN }}

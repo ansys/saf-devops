@@ -1,0 +1,73 @@
+# Copyright (C) 2026 ANSYS, Inc. and/or its affiliates.
+# SPDX-License-Identifier: Apache-2.0
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: Edit version in pyproject
+
+description: Edit the version of a pyproject.toml file.
+
+inputs:
+  version:
+    description: "Version to write in pyproject toml"
+    required: true
+  pyproject-path:
+    description: "Path of the pyproject.toml file"
+    required: false
+    default: 'pyproject.toml'
+  checkout-repo:
+    description: "Checkout or not the repository triggering the workflow."
+    required: false
+    default: 'true'
+
+runs:
+  using: "composite"
+  steps:
+
+    - name: Checkout actions
+      if: ${{ inputs.checkout-repo == 'true' }}
+      uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+      with:
+        clean: false
+        persist-credentials: false
+
+    - name: Set up Python
+      uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v6.1.0
+      with:
+        python-version: '3.12'
+
+    - name: get-version
+      shell: python
+      run: |
+        import os
+        file_path = os.getenv("FILE_PATH")
+        version = os.getenv("VERSION")
+
+        with open(file_path, 'r') as toml_file:
+          file_content = toml_file.readlines()
+
+        is_in_tool_poetry_section = False
+        for line_count, line in enumerate(file_content):
+            if not is_in_tool_poetry_section:
+              is_in_tool_poetry_section = '[tool.poetry]' in line or '[project]' in line
+
+            if is_in_tool_poetry_section and 'version' in line:
+              file_content[line_count] = f'version = "{version}"\n'
+              break
+
+        with open(file_path, 'w') as toml_file:
+          toml_file.writelines(file_content)
+      env:
+        VERSION: ${{ inputs.version }}
+        FILE_PATH: ${{ inputs.pyproject-path }}

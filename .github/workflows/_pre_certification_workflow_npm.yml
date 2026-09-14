@@ -1,0 +1,105 @@
+# Copyright (C) 2026 ANSYS, Inc. and/or its affiliates.
+# SPDX-License-Identifier: Apache-2.0
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: _pre_certification_workflow
+
+# Internal workflow to run before a certification
+
+on:
+  workflow_call:
+    inputs:
+      tag-to-certify:
+        type: string
+        required: true
+      # Required
+      node-version:
+        description: "Node.js version to use."
+        type: string
+        required: true
+      severity-level:
+        description: "Severity level for the analysis"
+        required: true
+        type: string
+      # Required with defaults
+      npm-parent-directory:
+        description: "Path to the directory containing the package.json file"
+        type: string
+        required: false
+        default: "."
+    outputs:
+      commit-is-already-tagged:
+        description: 'Commit is or is not tagged with the certification tag.'
+        value: ${{ jobs.needs-certification.outputs.commit_is_already_tagged }}
+      pre-certification-successfully-completed:
+        description: 'Pre-certification is successful.'
+        value: ${{ jobs.pre-certification-status.outputs.is_successful == 'true' }}
+    secrets:
+      READ_DEPENDABOT_ALERTS:
+        description: "Token to read Dependabot alerts"
+        required: true
+
+permissions: {}
+
+jobs:
+  needs-certification:
+    name: Check if commit is tagged
+    permissions:
+      contents: read
+    runs-on:
+      - ubuntu-latest
+    steps:
+      - id: verify-tag
+        uses: ansys/saf-devops/verify-tag-and-commit@v1
+        with:
+          tag: ${{ inputs.tag-to-certify }}
+    outputs:
+      commit_is_already_tagged: ${{ steps.verify-tag.outputs.commit-is-already-tagged
+        }}
+
+  get-production-dependabot-alerts:
+    permissions:
+      contents: read
+      security-events: read # For Dependabot alerts
+    name: Get production Dependabot alerts
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get production dependencies
+        uses: ansys/saf-devops/get-production-dependencies-npm@v1
+        with:
+          node-version: ${{ inputs.node-version }}
+          npm-parent-directory: ${{ inputs.npm-parent-directory }}
+
+      - name: Analyze Dependabot Alerts
+        uses: ansys/saf-devops/analyze-dependabot-alerts@v1
+        with:
+          severity-level: ${{ inputs.severity-level }}
+          manifest-path: ${{ inputs.npm-parent-directory != '.' && format('{0}/',
+            inputs.npm-parent-directory) || '' }}package.json
+          read-dependabot-alerts-token: ${{ secrets.READ_DEPENDABOT_ALERTS }}
+
+  pre-certification-status:
+    name: Verify certification success
+    needs:
+      - get-production-dependabot-alerts
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - if: ${{ contains(needs.*.result, 'failure') }}
+        shell: bash
+        run: exit 1
+    outputs:
+      is_successful: ${{ (!contains(needs.*.result, 'failure') && !contains(needs.*.result,
+        'cancelled')) && 'true' || 'false' }}

@@ -1,0 +1,111 @@
+# Copyright (C) 2026 ANSYS, Inc. and/or its affiliates.
+# SPDX-License-Identifier: Apache-2.0
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "ci(dependabot-actions)"
+    groups:
+      actions:
+        patterns:
+          - "*"
+    ignore:
+      - dependency-name: "vale-cli/vale-action"
+        versions:
+          - "2.1.1"
+    cooldown:
+      include:
+        - '*'
+      default-days: 7
+
+  - package-ecosystem: "pip"
+    directory: "/analyze-dependabot-alerts"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "ci(dependabot-analyze-dependabot-alerts) "
+    groups:
+      python-dependencies:
+        patterns:
+          - "*"
+    cooldown:
+      include:
+        - '*'
+      default-days: 7
+
+  - package-ecosystem: "pip"
+    directory: "/check-doc-for-broken-links"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "ci(dependabot-check-doc-for-broken-links)"
+    groups:
+      python-dependencies:
+        patterns:
+          - "*"
+    cooldown:
+      include:
+        - '*'
+      default-days: 7
+
+  - package-ecosystem: "pip"
+    directory: "/generate-sbom"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "ci(dependabot-generate-sbom)"
+    groups:
+      python-dependencies:
+        patterns:
+          - "*"
+    cooldown:
+      include:
+        - '*'
+      default-days: 7
+
+  - package-ecosystem: "pip"
+    directory: "/get-information-from-pyproject"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "ci(dependabot-get-information-from-pyproject)"
+    groups:
+      python-dependencies:
+        patterns:
+          - "*"
+    cooldown:
+      include:
+        - '*'
+      default-days: 7
+
+  - package-ecosystem: "pip"
+    directory: "/link-issue-to-pull-request"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "ci(dependabot-link-issue-to-pull-request)"
+    groups:
+      python-dependencies:
+        patterns:
+          - "*"
+    cooldown:
+      include:
+        - '*'
+      default-days: 7

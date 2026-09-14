@@ -1,0 +1,115 @@
+# Copyright (C) 2026 ANSYS, Inc. and/or its affiliates.
+# SPDX-License-Identifier: Apache-2.0
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# The labels declared in this file are the ones avialables
+# https://github.com/ansys/actions/labels
+
+# -- Defects and glitches labels----------------------------------------------
+
+- name: 'bug'
+  description: Defects or glitches reported by users or developers
+  color: d42a34
+
+- name: 'fix'
+  description: Pull requests related to resolving problems or errors
+  color: d42a34
+
+- name: 'spam'
+  description: Spammy request that must be ignored
+  color: d42a34
+
+- name: 'invalid'
+  description: Discarded contribution
+  color: d42a34
+
+# -- Style labels ------------------------------------------------------------
+
+- name: 'style'
+  description: Improvements related to general project style
+  color: dcbeff
+
+# -- Tests labels ------------------------------------------------------------
+
+- name: 'tests'
+  description: Related with improvements of the test suite
+  color: ffd8b1
+
+# -- Documentation labels ----------------------------------------------------
+
+- name: 'docs'
+  description: Issues related to documentation
+  color: 0677ba
+
+- name: 'deploy-pr-doc'
+  description: Deploy pull request documentation
+  color: 00ff00
+
+# -- Dependencies labels -----------------------------------------------------
+
+- name: 'dependencies'
+  description: Related with project dependencies
+  color: fabed4
+
+- name: 'dependencies:requirements'
+  description: Related with project file dependencies
+  color: fabed4
+
+- name: 'dependencies:ci'
+  description: Related with pipelines dependencies
+  color: fabed4
+
+# -- CI/CD labels ------------------------------------------------------------
+
+- name: 'ci'
+  description: Pipelines maintenance related
+  color: a9a9a9
+
+# -- Other labels ------------------------------------------------------------
+
+- name: 'release'
+  description: Anything related to an incoming release
+  color: ffffff
+
+- name: 'good first issue'
+  description: Issues suitable for newcomers or those with less experience
+  color: 62ca50
+
+- name: 'enhancement'
+  description: General improvements to existing features
+  color: ffd827
+
+- name: 'maintenance'
+  description: Generic maintenance related
+  color: f78c37
+
+- name: 'docker'
+  description: Docker maintenance related
+  color: 000075
+
+- name: 'breaking'
+  description: Changes that break backward compatibility
+  color: ff0000
+
+# Hacktoberfest labels -------------------------------------------------------
+
+- name: 'hacktoberfest'
+  description: Hacktoberfest related
+  color: 62ca50
+
+- name: 'hacktoberfest-accepted'
+  description: Hacktoberfest accepted contribution
+  color: 62ca50
+

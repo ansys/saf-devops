@@ -1,0 +1,174 @@
+# Copyright (C) 2026 ANSYS, Inc. and/or its affiliates.
+# SPDX-License-Identifier: Apache-2.0
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: Prepare virtual environment for python-based project managed by Poetry
+
+description: |
+  Prepare virtual environment for python-based project managed by Poetry
+
+inputs:
+  python-version:
+    description: "Python version to use."
+    required: true
+  poetry-version:
+    description: "Poetry version to use."
+    required: true
+  poetry-install-args:
+    description: "Additional arguments to use with poetry install."
+    required: true
+  python-project-path:
+    description: "Path to the Python project, if different from the root directory."
+    required: true
+
+outputs:
+  python-cmd:
+    description: "Path to the Python executable in the created virtual environment."
+    value: ${{ steps.determine-venv-paths.outputs.python-cmd }}
+  poetry-cmd:
+    description: "Path to the Poetry executable in the created virtual environment."
+    value: ${{ steps.determine-venv-paths.outputs.poetry-cmd }}
+  pre-commit-cmd:
+    description: "Path to the pre-commit executable in the created virtual environment."
+    value: ${{ steps.determine-venv-paths.outputs.pre-commit-cmd }}
+  venv-exe-location:
+    description: "Path to the virtual environment's executable location."
+    value: ${{ steps.determine-venv-paths.outputs.venv-exe-location }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Cache Poetry dependencies
+      uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+      with:
+        path: |
+          ~/.cache/pypoetry
+          ~/.cache/pip
+        key: ${{ runner.os }}-poetry-${{ hashFiles(format('{0}/poetry.lock', inputs.python-project-path))
+          }}
+        restore-keys: |
+          ${{ runner.os }}-poetry-
+
+    - name: Set up Python ${{ inputs.python-version }}
+      id: setup-python
+      uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v6.1.0
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Determine virtual environment paths
+      id: determine-venv-paths
+      shell: bash
+      run: | # zizmor: ignore[github-env]
+        if [[ "${RUNNER_OS}" == "Windows" ]]; then
+          VENV_EXE_LOCATION=".venv/Scripts"
+          POETRY_EXECUTABLE="poetry.exe"
+          PYTHON_BASH=$(cygpath -u "${PYTHON_PATH}")
+          TEMP_BASH=$(cygpath -u "${RUNNER_TEMP}")
+          SOURCE_LINKED_POETRY_CMD="${RUNNER_TEMP}\\.poetry\\.venv\\Scripts\\$POETRY_EXECUTABLE"
+          TARGET_LINKED_POETRY_CMD="${GITHUB_WORKSPACE}${FORMATTED_PYTHON_PROJECT_PATH}\\.venv\\Scripts\\$POETRY_EXECUTABLE"
+        else
+          VENV_EXE_LOCATION=".venv/bin"
+          POETRY_EXECUTABLE="poetry"
+          PYTHON_BASH="${PYTHON_PATH}"
+          TEMP_BASH="${RUNNER_TEMP}"
+          SOURCE_LINKED_POETRY_CMD="${RUNNER_TEMP}/.poetry/.venv/bin/$POETRY_EXECUTABLE"
+          TARGET_LINKED_POETRY_CMD="${GITHUB_WORKSPACE}/${PYTHON_PROJECT_PATH}/$VENV_EXE_LOCATION/$POETRY_EXECUTABLE"
+        fi
+
+        echo "VENV_EXE_LOCATION=$VENV_EXE_LOCATION" >> $GITHUB_ENV
+        echo "venv-exe-location=$VENV_EXE_LOCATION" >> $GITHUB_OUTPUT
+
+        echo "PYTHON_BASH=$PYTHON_BASH" >> $GITHUB_OUTPUT
+        echo "SOURCE_LINKED_POETRY_CMD=$SOURCE_LINKED_POETRY_CMD" >> $GITHUB_OUTPUT
+        echo "TARGET_LINKED_POETRY_CMD=$TARGET_LINKED_POETRY_CMD" >> $GITHUB_OUTPUT
+
+        echo "PYTHON_CMD=$VENV_EXE_LOCATION/python" >> $GITHUB_ENV
+        echo "python-cmd=$VENV_EXE_LOCATION/python" >> $GITHUB_OUTPUT
+
+        echo "pre-commit-cmd=$VENV_EXE_LOCATION/pre-commit" >> $GITHUB_OUTPUT
+
+        POETRY_INSTALLATION_DIR="$TEMP_BASH/.poetry"
+        echo "POETRY_INSTALLATION_DIR=$POETRY_INSTALLATION_DIR" >> $GITHUB_OUTPUT
+
+        POETRY_CMD="$POETRY_INSTALLATION_DIR/$VENV_EXE_LOCATION/$POETRY_EXECUTABLE"
+        echo "POETRY_CMD=$POETRY_CMD" >> $GITHUB_ENV
+        echo "poetry-cmd=$POETRY_CMD" >> $GITHUB_OUTPUT
+
+        if [[ "${PYTHON_PROJECT_PATH}" == "" || "${PYTHON_PROJECT_PATH}" == "." ]]; then
+          echo "${GITHUB_WORKSPACE}/$VENV_EXE_LOCATION" >> $GITHUB_PATH
+        else
+          echo "${GITHUB_WORKSPACE}/${PYTHON_PROJECT_PATH}/$VENV_EXE_LOCATION" >> $GITHUB_PATH
+        fi
+        echo "${PYTHON_PROJECT_PATH}\.venv\Scripts" >> $GITHUB_PATH
+      env:
+        PYTHON_PATH: ${{ steps.setup-python.outputs.python-path }}
+        PYTHON_PROJECT_PATH: ${{ inputs.python-project-path }}
+        FORMATTED_PYTHON_PROJECT_PATH: ${{ inputs.python-project-path != '.' && format('\\{0}',
+          inputs.python-project-path) || '' }}
+
+    - name: Create virtual environments and install Poetry
+      working-directory: ${{ inputs.python-project-path }}
+      shell: bash
+      run: |
+        $PYTHON_BASH -m venv .venv
+        $PYTHON_BASH -m venv ${POETRY_INSTALLATION_DIR}/.venv
+      env:
+        POETRY_INSTALLATION_DIR: ${{ steps.determine-venv-paths.outputs.POETRY_INSTALLATION_DIR
+          }}
+        PYTHON_BASH: ${{ steps.determine-venv-paths.outputs.PYTHON_BASH }}
+
+    - name: Install Poetry
+      working-directory: ${{ inputs.python-project-path }}
+      shell: bash
+      run: |
+        ${POETRY_INSTALLATION_DIR}/${PYTHON_CMD} -m pip install --upgrade pip
+        ${POETRY_INSTALLATION_DIR}/${PYTHON_CMD} -m pip install virtualenv${VIRTUAL_ENV_VERSION}
+        ${POETRY_INSTALLATION_DIR}/${PYTHON_CMD} -m pip install poetry==${POETRY_VERSION}
+      env:
+        POETRY_VERSION: ${{ inputs.poetry-version }}
+        VIRTUAL_ENV_VERSION: ${{ !startsWith(inputs.poetry-version, 2) && '==20.23.0'
+          || '' }}
+        POETRY_INSTALLATION_DIR: ${{ steps.determine-venv-paths.outputs.POETRY_INSTALLATION_DIR
+          }}
+
+    - name: Install Python dependencies
+      working-directory: ${{ inputs.python-project-path }}
+      shell: bash
+      run: $POETRY_CMD install ${POETRY_INSTALL_ARGS}
+      env:
+        POETRY_INSTALL_ARGS: ${{ inputs.poetry-install-args }}
+
+    - name: Link Poetry executable into project virtual environment
+      working-directory: ${{ inputs.python-project-path }}
+      shell: pwsh
+      if: ${{ runner.os == 'Windows' }}
+      run: powershell -Command New-Item -ItemType SymbolicLink -Target $env:SOURCE_LINKED_POETRY_CMD
+        -Path $env:TARGET_LINKED_POETRY_CMD
+      env:
+        SOURCE_LINKED_POETRY_CMD: ${{ steps.determine-venv-paths.outputs.SOURCE_LINKED_POETRY_CMD
+          }}
+        TARGET_LINKED_POETRY_CMD: ${{ steps.determine-venv-paths.outputs.TARGET_LINKED_POETRY_CMD
+          }}
+
+    - name: Link Poetry executable into project virtual environment
+      working-directory: ${{ inputs.python-project-path }}
+      shell: bash
+      if: ${{ runner.os != 'Windows' }}
+      run: ln -s "${SOURCE_LINKED_POETRY_CMD}" "${TARGET_LINKED_POETRY_CMD}"
+      env:
+        SOURCE_LINKED_POETRY_CMD: ${{ steps.determine-venv-paths.outputs.SOURCE_LINKED_POETRY_CMD
+          }}
+        TARGET_LINKED_POETRY_CMD: ${{ steps.determine-venv-paths.outputs.TARGET_LINKED_POETRY_CMD
+          }}

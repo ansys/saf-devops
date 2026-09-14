@@ -1,0 +1,69 @@
+# Copyright (C) 2026 ANSYS, Inc. and/or its affiliates.
+# SPDX-License-Identifier: Apache-2.0
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: check-changes
+
+on:
+  workflow_call:
+    inputs:
+      filters:
+        description: 'Inline filter configuration (YAML format).'
+        required: false
+        type: string
+      runner:
+        description: 'Runner to execute the workflow on.'
+        required: false
+        type: string
+        default: 'ubuntu-latest'
+    outputs:
+      changes:
+        description: "Json array with names of all filters matching any of changed
+          files."
+        value: ${{ jobs.check-changes.outputs.changes }}
+
+permissions: {}
+
+jobs:
+  check-changes:
+    name: Check Changes
+    permissions:
+      contents: read
+      pull-requests: read # To read the changed files in PRs
+    runs-on: ${{ inputs.runner }}
+    outputs:
+      changes: ${{ steps.check-code-changes.outputs.changes }}
+    steps:
+      - name: Checkout repository
+        if: |
+          github.event_name == 'push' ||
+          (github.event_name == 'pull_request' && github.event.pull_request.draft == false)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check code changes
+        if: |
+          github.event_name == 'push' ||
+          (github.event_name == 'pull_request' && github.event.pull_request.draft == false)
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: check-code-changes
+        with:
+          base: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha
+            || github.event.before }}
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha
+            || github.event.after }}
+          filters: ${{ inputs.filters }}

@@ -1,0 +1,48 @@
+# Copyright (C) 2026 ANSYS, Inc. and/or its affiliates.
+# SPDX-License-Identifier: Apache-2.0
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: Apply tag on commit
+
+description: |
+  Apply tag to the commit triggering the action.
+
+inputs:
+  # Required
+
+  tag:
+    description: "Tag to apply"
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+    - name: Checkout code
+      uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+      with:
+        fetch-depth: 0
+        clean: false
+        persist-credentials: true # require to push tags
+
+    - name: Apply tag to commit
+      shell: bash
+      run: |
+        git config --global user.name "GitHub Actions"
+        git config --global user.email "noreply@github.com"
+        git tag --force ${TAG} ${GITHUB_SHA}
+        git push origin ${TAG} --force
+      env:
+        TAG: ${{ inputs.tag }}
+        GITHUB_TOKEN: ${{ github.token }}

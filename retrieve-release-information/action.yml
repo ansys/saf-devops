@@ -1,0 +1,86 @@
+# Copyright (C) 2026 ANSYS, Inc. and/or its affiliates.
+# SPDX-License-Identifier: Apache-2.0
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: Retrieve Release Information
+
+description: |
+  Retrieve information about a release from a repository.
+
+inputs:
+  # Required
+  release-type:
+    description: "Type of release to create."
+    type: string
+    required: true
+  # Required with default
+  poetry-parent-directory:
+    description: "Parent directory for the poetry project."
+    type: string
+    default: "."
+outputs:
+  release-name:
+    description: "Release name"
+    value: ${{ steps.info.outputs.release_name }}
+  version-to-bump-in-triggering-branch:
+    description: "Version to bump in the triggering branch"
+    value: ${{ steps.info.outputs.version_to_bump_in_triggering_branch }}
+  version-to-release:
+    description: "Version to release"
+    value: ${{ steps.info.outputs.version_to_release }}
+  version-to-bump-in-release-branch:
+    description: "Version to bump in the triggering branch"
+    value: ${{ steps.info.outputs.version_to_bump_in_release_branch }}
+  release-branch-name:
+    description: "Release branch name"
+    value: ${{ steps.info.outputs.release_branch_name }}
+  version-major-minor:
+    description: "Version major.minor"
+    value: ${{ steps.info.outputs.version_major_minor }}
+  version-type:
+    description: "Type of version"
+    value: ${{ steps.info.outputs.version_type }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Checkout
+      uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+      with:
+        persist-credentials: false
+
+    - name: Set up Python
+      id: setup-python
+      uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v6.1.0
+      with:
+        python-version: '3.12'
+
+    - name: Install python dependencies
+      shell: bash
+      run: |
+        ${PYTHON_PATH} -m pip install pip --upgrade
+        ${PYTHON_PATH} -m pip install toml==0.10.2
+      env:
+        PYTHON_PATH: ${{ steps.setup-python.outputs.python-path }}
+
+    - name: Retrieve release information
+      id: info
+      shell: bash
+      env:
+        MANIFEST_DIRECTORY: ${{ inputs.poetry-parent-directory }}
+        RELEASE_TYPE: ${{ inputs.release-type }}
+        SCRIPT_PATH: "${{ github.action_path }}/retrieve_release_information.py"
+        PYTHON_PATH: ${{ steps.setup-python.outputs.python-path }}
+      run: ${PYTHON_PATH} ${SCRIPT_PATH}

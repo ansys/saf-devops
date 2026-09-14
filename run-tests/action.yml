@@ -1,0 +1,278 @@
+# Copyright (C) 2026 ANSYS, Inc. and/or its affiliates.
+# SPDX-License-Identifier: Apache-2.0
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: _run_tests_with_poetry_installation
+
+description: |
+  Run tests with Poetry installation
+
+inputs:
+  # Required
+  python-version:
+    description: "Version of Python to be used."
+    required: true
+  poetry-version:
+    description: "Version of Poetry to be used."
+    required: true
+  poetry-install-args:
+    description: "Poetry command argument to run to install dependencies"
+    required: true
+  test-reports:
+    description: "File to export pytest's report in HTML format."
+    required: true
+  # Required with default
+  working-directory:
+    description: "Working directory."
+    required: false
+    default: "."
+  # Optional
+  pytest-additional-arguments:
+    description: "Additional arguments to pass to pytest."
+    required: false
+    default: ""
+  non-admin:
+    description: "Run pytest without admin privileges."
+    required: false
+    default: 'false'
+  offline:
+    description: "Run tests in offline mode (no internet access)."
+    required: false
+    default: 'false'
+  checkout:
+    description: "Whether to checkout the repository. Set to false if the repository
+      has already been checked out in a previous step and you want to skip it."
+    required: false
+    default: 'true'
+  skip-install:
+    description: "Whether to skip the installation of dependencies. Set to true if
+      you have already installed dependencies in a previous step and want to skip
+      it."
+    required: false
+    default: 'false'
+
+runs:
+  using: "composite"
+  steps:
+    - name: Validate non-admin input
+      if: ${{ inputs.non-admin == 'true' && (runner.os != 'Windows' || env.RUNNER_ENVIRONMENT
+        == 'self-hosted' )}}
+      shell: bash
+      run: |
+        echo "::error title=INPUT::Invalid usage of 'non-admin' mode. Non admin mode is currently limited to 'Windows' GitHub runners."
+        exit 1
+
+    - name: Validate offline input
+      if: ${{ inputs.offline == 'true' && (runner.os != 'Windows' || env.RUNNER_ENVIRONMENT
+        == 'self-hosted' )}}
+      shell: bash
+      run: |
+        echo "::error title=INPUT::Invalid usage of 'offline' mode. Offline mode is currently limited to 'Windows' GitHub runners."
+        exit 1
+
+    - name: Checkout project
+      if: ${{ inputs.checkout == 'true' }}
+      uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+      with:
+        persist-credentials: false
+
+    - name: Poetry and Virtual Environment
+      if: ${{ inputs.skip-install != 'true' }}
+      uses: ansys/saf-devops/prepare-python-environment@v1
+      with:
+        python-version: ${{ inputs.python-version }}
+        python-project-path: ${{ inputs.working-directory }}
+        poetry-version: ${{ inputs.poetry-version }}
+        poetry-install-args: "${{ inputs.poetry-install-args }} ${{ runner.environment
+          == 'self-hosted' && '--no-cache' || '' }}"
+
+    - name: Create non-admin user
+      shell: cmd # zizmor: ignore[misfeature] - did not find a way to do the equivalent in pwsh
+      if: ${{ inputs.non-admin == 'true' && runner.os == 'Windows' && env.RUNNER_ENVIRONMENT
+        != 'self-hosted' }}
+      run: net user nonadmintestuser P@ssw0rd! /add
+
+    - name: Offline mode
+      if: ${{ inputs.offline == 'true' && runner.os == 'Windows' && env.RUNNER_ENVIRONMENT
+        != 'self-hosted'}}
+      working-directory: ${{ inputs.working-directory }}
+      shell: pwsh
+      run: |
+        # Block ALL outbound traffic for the specific Python executable of the virtual environment
+        $python_path = (Get-Location).Path + '\.venv\Scripts\python.exe'
+        netsh advfirewall firewall add rule name="Block Python All Outbound" dir=out action=block program="$python_path" enable=yes
+
+        # Block ALL outbound traffic for pytest specifically
+        $pytest_path = (Get-Location).Path + '\.venv\Scripts\pytest.exe'
+        if (Test-Path $pytest_path) {
+          netsh advfirewall firewall add rule name="Block Pytest All Outbound" dir=out action=block program="$pytest_path" enable=yes
+        }
+
+        # Block DNS queries (port 53) for all programs
+        netsh advfirewall firewall add rule name="Block DNS TCP Outbound" dir=out action=block protocol=TCP remoteport=53 enable=yes
+        netsh advfirewall firewall add rule name="Block DNS UDP Outbound" dir=out action=block protocol=UDP remoteport=53 enable=yes
+
+        # Block all outbound network traffic for all programs except to localhost and local subnet
+        netsh advfirewall firewall add rule name="Block All TCP Outbound" `
+          dir=out action=block protocol=TCP `
+          remoteip=!127.0.0.1,!::1,!LocalSubnet enable=yes
+        netsh advfirewall firewall add rule name="Block All UDP Outbound" `
+          dir=out action=block protocol=UDP `
+          remoteip=!127.0.0.1,!::1,!LocalSubnet enable=yes
+
+        # Also block any system-wide Python executables
+        netsh advfirewall firewall add rule name="Block System Python All Outbound" dir=out action=block `
+          program="$env:pythonLocation\python.exe" enable=yes
+        netsh advfirewall firewall add rule name="Block System Python All Outbound" dir=out action=block `
+          program="$env:pythonLocation\python.exe" enable=yes
+
+        # Block Windows DNS Client service to prevent system-level DNS resolution
+        netsh advfirewall firewall add rule `
+          name="Block DNS Client Service" `
+          dir=out action=block `
+          service=dnscache enable=yes
+
+        Write-Host "Offline mode enabled - all outbound network traffic and DNS resolution blocked"
+
+    - name: Run pytest as non-admin
+      id: run-tests-non-admin
+      if: ${{ inputs.non-admin == 'true' && runner.os == 'Windows' && env.RUNNER_ENVIRONMENT
+        != 'self-hosted' }}
+      working-directory: ${{ inputs.working-directory }}
+      shell: pwsh
+      run: | # zizmor: ignore[template-injection] - trusted usage for pytest
+        $User = "nonadmintestuser"
+        $Pass = "P@ssw0rd!"
+        $SecurePass = ConvertTo-SecureString $Pass -AsPlainText -Force
+        $Cred = New-Object System.Management.Automation.PSCredential($User, $SecurePass)
+
+        $parent_dir = Split-Path "$env:MARKDOWN_REPORT"
+        if (!(Test-Path $parent_dir)) {
+          New-Item -ItemType Directory -Path $parent_dir | Out-Null
+        }
+
+        Start-Process .venv/Scripts/pytest -ArgumentList @(
+          "-p", "no:faulthandler",
+          "--cov=.",
+          "--cov-report=term",
+          "--cov-report=xml",
+          "--cov-report=html",
+          "--html=$env:HTML_REPORT",
+          "--md=$env:MARKDOWN_REPORT",
+          "${{ inputs.pytest-additional-arguments }}",
+        ) `
+          -Credential $Cred `
+          -WorkingDirectory $PWD `
+          -Wait `
+          -RedirectStandardOutput "pytest_output.txt" `
+          -RedirectStandardError "pytest_error.txt"
+
+        if (Test-Path "$env:HTML_REPORT") {
+          Write-Host "HTML report exists."
+          echo "TESTS_SELECTED=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "TESTS_SELECTED=true"
+        } else {
+          Write-Host "HTML report does not exist."
+          echo "TESTS_SELECTED=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+        }
+
+        Write-Host "==== BEGIN PYTEST STDOUT ===="
+        Get-Content pytest_output.txt
+        Write-Host "===== END PYTEST STDOUT ====="
+
+        # Check for FAILED or ERROR in pytest output
+        $pytestOutput = Get-Content pytest_output.txt
+        if ($pytestOutput -match '\] FAILED ' -or $pytestOutput -match '\] ERROR ' -or $pytestOutput -match ' ERROR \[') {
+          Write-Host "Detected FAILED or ERROR in pytest output. Failing the workflow."
+          exit 1
+        }
+      env:
+        HTML_REPORT: ${{ inputs.html-report }}
+        MARKDOWN_REPORT: ${{ inputs.markdown-report }}
+
+    - name: Run tests
+      id: run-tests-admin
+      if: ${{ inputs.non-admin != 'true' }}
+      working-directory: ${{ inputs.working-directory }}
+      shell: bash
+      run: | # zizmor: ignore[template-injection] - trusted usage for pytest
+        if [[ "${RUNNER_OS}" == "Windows" ]]; then . .venv/Scripts/activate; fi
+        if [[ "${RUNNER_OS}" == "Linux" ]]; then . .venv/bin/activate; fi
+
+        html_report_option="--html=${TEST_REPORTS}/report.html"
+
+        parent_dir=$(dirname "${TEST_REPORTS}")
+        mkdir -p "${TEST_REPORTS}"
+        md_report_option="--md=${TEST_REPORTS}/report.md"
+
+        pytest -p no:faulthandler --cov=. \
+          --cov-report=term \
+          --cov-report=xml \
+          --cov-report=html \
+          ${html_report_option} \
+          ${md_report_option} \
+          ${{ inputs.pytest-additional-arguments }} \
+          -vv || exit_code=$?
+
+        if [ $exit_code -eq 5 ]; then
+          echo "::warning title=PYTEST::No tests were selected."
+          echo "TESTS_SELECTED=false" >> $GITHUB_OUTPUT
+          exit 0
+        elif [ "$exit_code" -ne 0 ]; then
+          echo "::error title=PYTEST::pytest failed with exit code $exit_code, see https://docs.pytest.org/en/stable/reference/exit-codes.html."
+          exit $exit_code
+        fi
+      env:
+        TEST_REPORTS: ${{ inputs.test-reports }}
+
+    - name: Coverage
+      working-directory: ${{ inputs.working-directory }}
+      if: ${{ steps.run-tests-admin.outputs.TESTS_SELECTED != 'false' || steps.run-tests-non-admin.outputs.TESTS_SELECTED
+        != 'false' }}
+      shell: bash
+      run: |
+        if [[ "${RUNNER_OS}" == "Windows" ]]; then . .venv/Scripts/activate; fi
+        if [[ "${RUNNER_OS}" == "Linux" ]]; then . .venv/bin/activate; fi
+
+        coverage lcov
+
+        mv htmlcov "${TEST_REPORTS}/htmlcov"
+        mv coverage.xml "${TEST_REPORTS}/coverage.xml"
+      env:
+        TEST_REPORTS: ${{ inputs.test-reports }}
+
+    - name: Cleanup offline mode firewall rules
+      if: ${{ always() && inputs.offline == 'true' && runner.os == 'Windows' && env.RUNNER_ENVIRONMENT
+        != 'self-hosted'}}
+      shell: pwsh
+      run: |
+        Write-Host "Cleaning up firewall rules created for offline mode..."
+        # Remove all the firewall rules we added for offline mode
+        netsh advfirewall firewall delete rule name="Block Python All Outbound" 2>$null
+        netsh advfirewall firewall delete rule name="Block Pytest All Outbound" 2>$null
+        netsh advfirewall firewall delete rule name="Block DNS TCP Outbound" 2>$null
+        netsh advfirewall firewall delete rule name="Block DNS UDP Outbound" 2>$null
+        netsh advfirewall firewall delete rule name="Block All TCP Outbound" 2>$null
+        netsh advfirewall firewall delete rule name="Block All UDP Outbound" 2>$null
+        netsh advfirewall firewall delete rule name="Block System Python All Outbound" 2>$null
+        netsh advfirewall firewall delete rule name="Block DNS Client Service" 2>$null
+        Write-Host "Firewall rules cleanup completed"
+
+    - name: Publish test reports
+      if: always()
+      uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+      with:
+        name: "${{ inputs.test-reports }}"
+        path: "${{ inputs.working-directory }}/${{ inputs.test-reports }}"

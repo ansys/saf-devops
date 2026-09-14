@@ -1,0 +1,86 @@
+# Copyright (C) 2026 ANSYS, Inc. and/or its affiliates.
+# SPDX-License-Identifier: Apache-2.0
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: Update Latest vX and vX.Y Tag
+
+description: |
+  Update the latest vX and vX.Y tag to point to the latest Release version.
+  And push a new branch 'release/vX.Y.Z' to be used for hotfixes
+
+inputs:
+  release-version:
+    description: "Tagged release version that you want to use - typically 'vX.Y.Z'"
+    required: true
+    default: ""
+  latest-branch-name:
+    description: Create/update a branch with the latest copy of main. To disable,
+      set to ""
+    required: false
+    default: "latest"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Semantic version from tag
+      shell: bash
+      id: semantic-version
+      env:
+        SEMANTIC_VERSION: ${{ inputs.release-version != '' && inputs.release-version
+          || github.event.release.tag_name }}
+      run: | # zizmor: ignore[template-injection]
+        MAJOR_VERSION=$(echo ${{ env.SEMANTIC_VERSION }} |  cut -d 'v' -f 2 | cut -d '.' -f 1)
+        MINOR_VERSION=$(echo ${{ env.SEMANTIC_VERSION }} |  cut -d 'v' -f 2 | cut -d '.' -f 2)
+        PATCH_VERSION=$(echo ${{ env.SEMANTIC_VERSION }} |  cut -d 'v' -f 2 | cut -d '.' -f 3)
+        echo "Major version: $MAJOR_VERSION"
+        echo "Minor version: $MINOR_VERSION"
+        echo "Patch version: $PATCH_VERSION"
+        echo "MAJOR_VERSION=$MAJOR_VERSION" >> $GITHUB_OUTPUT
+        echo "MINOR_VERSION=$MINOR_VERSION" >> $GITHUB_OUTPUT
+        echo "PATCH_VERSION=$PATCH_VERSION" >> $GITHUB_OUTPUT
+
+    - name: Update SemVer tag
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+        LATEST_BRANCH_NAME: ${{ inputs.latest-branch-name }}
+        RELEASE_BRANCH: "release/v${{ steps.semantic-version.outputs.major_version
+          }}.${{ steps.semantic-version.outputs.minor_version }}.${{ steps.semantic-version.outputs.patch_version
+          }}"
+        RELEASE_TAG_NAME: ${{ github.event.release.tag_name }}
+      run: | # zizmor: ignore[template-injection]
+        git config --global user.name "GitHub Actions"
+        git config --global user.email "noreply@github.com"
+
+        # Try to delete existing vX and vX.Y tag to avoid conflicts
+        git push --delete origin v${{ steps.semantic-version.outputs.major_version }} || true
+        git push --delete origin v${{ steps.semantic-version.outputs.major_version }}.${{ steps.semantic-version.outputs.minor_version }} || true
+
+        # Create new vX and vX.Y tag
+        git tag -a v${{ steps.semantic-version.outputs.major_version }} -m "Latest v${{ steps.semantic-version.outputs.major_version }} is Release ${RELEASE_TAG_NAME}"
+        git tag -a v${{ steps.semantic-version.outputs.major_version }}.${{ steps.semantic-version.outputs.minor_version }} -m "Latest v${{ steps.semantic-version.outputs.major_version }}.${{ steps.semantic-version.outputs.minor_version }} is Release ${RELEASE_TAG_NAME}"
+        git push origin v${{ steps.semantic-version.outputs.major_version }}
+        git push origin v${{ steps.semantic-version.outputs.major_version }}.${{ steps.semantic-version.outputs.minor_version }}
+
+        # Create and push 'release/vX.Y.Z' branch
+        # custom code to also push to a release branch
+        git checkout -b ${RELEASE_BRANCH}
+        git push -u origin ${RELEASE_BRANCH}
+
+        # Create and push 'latest' branch, if set
+        if [ "${LATEST_BRANCH_NAME}" != "" ]; then
+          git checkout --force -b ${LATEST_BRANCH_NAME}
+          git push --force -u origin ${LATEST_BRANCH_NAME}
+        fi

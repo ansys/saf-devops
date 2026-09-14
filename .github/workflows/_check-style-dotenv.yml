@@ -1,0 +1,99 @@
+# Copyright (C) 2026 ANSYS, Inc. and/or its affiliates.
+# SPDX-License-Identifier: Apache-2.0
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: check_style_dotenv
+
+on:
+  workflow_call:
+    inputs:
+      dotenv-lint-result-suffix:
+        description: "Suffix to add to the dotenv-linter result artifact"
+        required: false
+        type: string
+        default: ""
+
+permissions: {}
+
+jobs:
+  dotenv-linter:
+    name: Run dotenv-linter
+    permissions:
+      contents: read
+    env:
+      ARTIFACT_NAME: "dotenv_lint_result${{ inputs.dotenv-lint-result-suffix }}"
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install dotenv-linter
+        working-directory: ${{ runner.temp }}
+        shell: bash
+        run: |
+          commit="f9076b02daed89f54ed0bd23951a4cfa5ccceac4" # commit for v4.0.0
+          curl -sSfL https://raw.githubusercontent.com/dotenv-linter/dotenv-linter/${commit}/install.sh | sh -s
+
+          # Add to PATH for subsequent steps
+          echo "${RUNNER_TEMP}/bin" >> $GITHUB_PATH
+
+          if [ "${RUNNER_DEBUG}" == "1" ]; then
+            # Check if dotenv-linter is installed correctly
+            bin/dotenv-linter --version
+          fi
+
+      - name: Run dotenv-linter on .env files
+        shell: bash
+        run: |
+          # Find all .env files and run dotenv-linter on them
+          if find . -type f -name '.env' | head -1 | grep -q .; then
+            # Files found, run linter with check command
+            output=$(find . -type f -name '.env' -exec dotenv-linter check {} \;)
+            echo "$output" >> ${ARTIFACT_NAME}.txt
+          else
+            # No .env files found
+            echo "No .env files found in the repository." >> ${ARTIFACT_NAME}.txt
+          fi
+
+      - name: Upload .env lint results artifact
+        id: upload-artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: ${{ env.ARTIFACT_NAME }}.txt
+
+      - name: Check if any problems were found
+        shell: bash
+        run: |
+          # Capture the output of the dotenv-linter run
+          output=$(cat ${ARTIFACT_NAME}.txt)
+
+          # Check if no .env files were found
+          if [[ "$output" == *"No .env files found"* ]]; then
+              echo "ℹ️ No .env files found in the repository - nothing to check."
+              exit 0
+          fi
+
+          # Check if the pattern "Found X problems" is present
+          if [[ "$output" == *"Found "*problem* ]]; then
+              echo -e "::error title=🚨 Warnings/errors were found by dotenv-linter::🔗 To download the logs of dotenv-linter, use the following URL: ${ARTIFACT_URL}"
+              exit 1
+          else
+            echo "✅ dotenv-linter ran successfully. No warnings/errors found."
+          fi
+        env:
+          ARTIFACT_URL: ${{ steps.upload-artifact.outputs.artifact-url }}

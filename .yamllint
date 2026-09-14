@@ -1,0 +1,34 @@
+extends: default
+
+ignore: |
+  .tox/
+  .tox/**
+  .venv/
+  venv/
+  .git/
+  node_modules/
+  __pycache__/
+  *.pyc
+  .pytest_cache/
+
+rules:
+  line-length: disable # Disable long line checking
+  indentation:
+    spaces: 2
+    indent-sequences: true
+  comments:
+    min-spaces-from-content: 1
+    require-starting-space: false
+  comments-indentation: disable # Allow flexible comment indentation
+  document-start: disable
+  truthy:
+    allowed-values: ['true', 'false', 'on', 'off']
+    check-keys: false
+  trailing-spaces: enable
+  new-line-at-end-of-file: enable
+  new-lines:
+    type: platform # Allow both Unix (LF) and Windows (CRLF) line endings
+  empty-lines:
+    max: 3
+    max-start: 0
+    max-end: 0

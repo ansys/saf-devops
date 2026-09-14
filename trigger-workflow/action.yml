@@ -1,0 +1,117 @@
+# Copyright (C) 2026 ANSYS, Inc. and/or its affiliates.
+# SPDX-License-Identifier: Apache-2.0
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: Launch and monitor a workflow.
+
+description: |-
+  This action triggers a workflow in the given repository
+  to build and test the generated solution.
+
+inputs:
+  gh-token:
+    description: "GitHub token with permissions to trigger workflows and read workflow
+      runs"
+    required: true
+  workflow-name:
+    description: "Name of the workflow file to trigger"
+    required: true
+  repository:
+    description: "The repository where the workflow to be triggered is located"
+    required: true
+  ref:
+    description: "The git reference (branch, tag, sha) to run the workflow on"
+    required: true
+  time-interval-seconds:
+    description: "Time interval in seconds to wait between each check of the workflow
+      status"
+    required: false
+    default: "10"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Trigger workflow
+      id: trigger_workflow
+      shell: bash
+      run: |
+        echo "${MESSAGE}"
+
+        gh workflow run ${WORKFLOW_NAME} \
+          --repo ${REPO} \
+          --ref ${REF}
+      env:
+        MESSAGE: "🚀 Triggering workflow '${{ inputs.workflow-name }}' in ${{ inputs.repository
+          }} on ref '${{ inputs.ref }}'"
+        WORKFLOW_NAME: ${{ inputs.workflow-name }}
+        REPO: ${{ inputs.repository }}
+        REF: ${{ inputs.ref }}
+        GH_TOKEN: ${{ inputs.gh-token }}
+
+    - name: Wait for workflow to complete
+      id: wait-for-workflow-to-complete
+      shell: bash
+      run: |
+        # Try up to 12 times, every 10 seconds, to find the workflow run
+        max_attempts=12
+        attempt=1
+
+        while [ $attempt -le $max_attempts ]; do
+          sleep 10
+          response=$(gh api \
+            -H "Accept: application/vnd.github.v3+json" \
+            "/repos/${REPO}/actions/workflows/${WORKFLOW_NAME}/runs?branch=${REF}&page=1&per_page=10")
+
+          run_id=$(echo $response | jq -r '.workflow_runs[0].id')
+          if [ -n "$run_id" ]; then
+            echo "✅ Found workflow run: $run_id"
+            break
+          fi
+          echo "[build-workflow] ⏳ Waiting for workflow run to be launched... (attempt $attempt/$max_attempts)"
+          attempt=$((attempt + 1))
+        done
+
+        if [ -z "$run_id" ] || [ "$run_id" = "null" ]; then
+          echo "❌ No workflow run found for branch ${REF} after $max_attempts attempts."
+          exit 1
+        fi
+
+        run_link="https://github.com/${REPO}/actions/runs/$run_id"
+
+        # Poll for completion without showing logs
+        echo "⏳ Monitoring workflow execution..."
+        while true; do
+          STATUS=$(gh run view --repo ${REPO} $run_id --json conclusion -q ".conclusion")
+          if [ "$STATUS" != "null" ] && [ "$STATUS" != "" ]; then
+            break
+          fi
+          echo "[${WORKFLOW_NAME}] ⏳ Still running... ($run_link)"
+          sleep ${INTERVAL}
+        done
+
+        echo "[${WORKFLOW_NAME}] status=$STATUS" >> $GITHUB_OUTPUT
+        if [ "$STATUS" == "success" ]; then
+          echo "[${WORKFLOW_NAME}] ✅ Workflow succeeded!"
+          exit 0
+        else
+          echo "[${WORKFLOW_NAME}] 🔥 Some jobs failed. See details in $run_link"
+          exit 1
+        fi
+      env:
+        REF: ${{ inputs.ref }}
+        REPO: ${{ inputs.repository }}
+        WORKFLOW_NAME: ${{ inputs.workflow-name }}
+        INTERVAL: ${{ inputs.time-interval-seconds }}
+        GH_TOKEN: ${{ inputs.gh-token }}

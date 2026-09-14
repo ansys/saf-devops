@@ -1,0 +1,290 @@
+# Copyright (C) 2026 ANSYS, Inc. and/or its affiliates.
+# SPDX-License-Identifier: Apache-2.0
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: Prepare a runner for the tests
+
+description: |
+  Prepare a runner for the tests
+  glow-engine/saf-cli repository must be checked out before using this composite action.
+  aiohttp<4.0.0 to be compatible with ansys-saf-testing hps extra dependencies.
+
+inputs:
+  python-version:
+    description: "Python version"
+    required: true
+  upgrade-docker:
+    description: "Upgrade docker."
+    required: true
+  images-to-pull:
+    description: "Images to pull from private registry."
+    required: false
+    default: >
+      [
+          {
+              "image": "postgres:16.0",
+              "private_image": "postgres:16.0"
+          },
+          {
+              "image": "bitnami/postgresql:17",
+              "private_image": "postgres:17"
+          },
+          {
+              "image": "eqalpha/keydb:alpine_x86_64_v6.3.3",
+              "private_image": "keydb:alpine_x86_64_v6.3.3"
+          },
+          {
+              "image": "influxdb:1.8.10",
+              "private_image": "influxdb:1.8.10"
+          },
+          {
+
+              "image": "quay.io/keycloak/keycloak:26.1.3",
+              "private_image": "keycloak:26.1.3"
+          },
+          {
+              "image": "openfga/openfga:v1.8.16",
+              "private_image": "openfga:v1.8.16"
+          },
+          {
+              "image": "traefik:v3.3",
+              "private_image": "traefik:v3.3"
+          }
+      ]
+  dot-net-version:
+    description: 'dot net version'
+    required: true
+  docker-version:
+    description: "Docker version."
+    required: false
+    default: ""
+  docker-compose-version:
+    description: "Docker Compose version."
+    required: false
+    default: "v2.27.0"
+  hps-version:
+    description: "HPS version."
+    required: false
+    default: ""
+  working-directory:
+    description: "Working directory for the action."
+    required: false
+    default: "."
+
+runs:
+  using: "composite"
+  steps:
+    - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Clean-up hps log folder content
+      id: cleanup-hps-logs
+      shell: bash
+      run: |
+        echo "ℹ️ [cleanup-hps-logs] Starting HPS log folder cleanup..."
+        rm ~/.ansys/rep/scaling/** 2>/dev/null || true
+        rm -rf /tmp/hps_* 2>/dev/null || true
+        echo "ℹ️ [cleanup-hps-logs] ... HPS log folder cleanup completed."
+
+    - name: Collect Workflow Telemetry
+      if: runner.debug == '1'
+      uses: catchpoint/workflow-telemetry-action@94c3c3d9567a0205de6da68a76c428ce4e769af1 # v2.0.0
+
+    - name: Install Docker
+      if: ${{ inputs.docker-version != '' && runner.environment != 'self-hosted' }}
+      env:
+        DOCKER_VERSION: ${{ inputs.docker-version }}
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        sudo apt-get remove -y docker-ce docker-ce-cli docker-buildx-plugin docker-compose-plugin containerd.io docker-ce-rootless-extras || true
+          sudo apt-get autoremove -y
+          sudo rm -rf /var/lib/docker
+          sudo rm -rf /etc/docker
+
+        sudo apt-get update
+          sudo apt-get install -y \
+            ca-certificates \
+            curl \
+            gnupg \
+            lsb-release
+
+        sudo install -m 0755 -d /etc/apt/keyrings
+          curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+          sudo chmod a+r /etc/apt/keyrings/docker.gpg
+
+        echo \
+            "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
+            $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
+            sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+        sudo apt-get update
+          # Install specific version 28.0.4 with downgrade allowed
+          # VERSION_STRING="5:28.0.4-1~ubuntu.24.04~noble"
+          sudo apt-get install -y --allow-downgrades \
+            docker-ce=${DOCKER_VERSION} \
+            docker-ce-cli=${DOCKER_VERSION} \
+            containerd.io \
+            docker-buildx-plugin \
+            docker-compose-plugin
+
+        echo "ℹ️ [install-docker] Verify docker version"
+        docker --version
+
+        echo "ℹ️ [install-docker] ... Docker installation completed."
+
+    - name: Upgrade Docker Compose on Github-hosted Linux
+      id: upgrade-docker-compose
+      if: ${{ inputs.upgrade-docker == 'true' && runner.environment != 'self-hosted'
+        }}
+      shell: bash
+      run: |
+        echo "ℹ️ [upgrade-docker-compose] Starting Docker Compose upgrade..."
+
+        DOCKER_CONFIG=${DOCKER_CONFIG:-$HOME/.docker}
+        mkdir -p $DOCKER_CONFIG/cli-plugins
+        curl -SL https://github.com/docker/compose/releases/download/${DOCKER_COMPOSE_VERSION}/docker-compose-linux-x86_64 -o $DOCKER_CONFIG/cli-plugins/docker-compose
+        chmod +x $DOCKER_CONFIG/cli-plugins/docker-compose
+
+        echo "🔍 Debug: Checking docker version after upgrade:"
+        docker compose version
+        echo "ℹ️ [upgrade-docker-compose] ... Docker Compose upgrade completed."
+      env:
+        DOCKER_COMPOSE_VERSION: ${{ inputs.docker-compose-version }}
+
+    - name: Initialize framebuffer on Ubuntu
+      if: runner.os != 'Windows'
+      shell: bash
+      run: |
+        echo "DISPLAY=:99" >> $GITHUB_ENV
+        Xvfb -ac :99 -screen 0 1280x1024x24 > /dev/null 2>&1 &
+
+    - name: Install dotnet for PIM Light Server on Ubuntu
+      if: runner.os != 'Windows'
+      shell: bash
+      run: | # zizmor: ignore[github-env] - trusted usage for .NET setup
+        wget https://dot.net/v1/dotnet-install.sh
+        chmod +x dotnet-install.sh
+        ./dotnet-install.sh --install-dir $RUNNER_TEMP/.dotnet --version ${DOT_NET_VERSION} --runtime aspnetcore
+        echo "DOTNET_ROOT=$RUNNER_TEMP/.dotnet" >> $GITHUB_ENV
+        echo "$RUNNER_TEMP/.dotnet" >> $GITHUB_PATH
+      env:
+        DOT_NET_VERSION: ${{ inputs.dot-net-version }}
+
+    - name: Export dependencies
+      id: export-dependencies
+      if: ${{ inputs.hps-version != '' }}
+      shell: bash
+      run: |
+        echo "ℹ️ [export-dependencies] Starting dependency export..."
+        pip install poetry==2.0.0
+        poetry self add poetry-plugin-export@1.9.0
+        poetry -C ${PROJECT_DIR} export -f requirements.txt --output "${GITHUB_WORKSPACE}/dependencies.txt" --all-extras --with tests --without-hashes
+        echo "ℹ️ [export-dependencies] ... dependency export completed."
+      env:
+        PROJECT_DIR: ${{ inputs.working-directory }}
+
+    - name: Get saf-testing version for the HPS scaler configuration
+      if: ${{ inputs.hps-version != '' }}
+      shell: python
+      run: |
+        import os
+        from pathlib import Path
+
+        dependencies_file = Path(os.getenv("GITHUB_WORKSPACE")) / "dependencies.txt"
+        with dependencies_file.open("r") as file:
+          line = next(line for line in file if "ansys-saf-testing" in line)
+
+        version = line.split(" ; ")[0].split("==")[-1]
+
+        environment_file = os.getenv("GITHUB_ENV")
+        with Path(environment_file).open("a") as file:
+            file.write(f"SAF_TESTING_VERSION={version}\n")
+
+    - name: Setup ORAS
+      if: ${{ inputs.hps-version != '' }}
+      uses: oras-project/setup-oras@22ce207df3b08e061f537244349aac6ae1d214f6 # v1.2.4
+
+    - name: Log in to GHCR
+      if: ${{ inputs.upgrade-docker == 'true' || inputs.hps-version != '' }}
+      uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ github.token }}
+
+    - name: Get hps_deployment directory
+      working-directory: ${{ inputs.working-directory }}
+      if: ${{ inputs.hps-version != '' }}
+      shell: bash
+      run: oras pull ghcr.io/${GITHUB_REPOSITORY}/rep-deployments:${HPS_VERSION}
+      env:
+        HPS_VERSION: ${{ inputs.hps-version }}
+
+    - name: Install hps
+      id: install-hps
+      working-directory: ${{ inputs.working-directory }}
+      if: ${{ inputs.hps-version != '' }}
+      shell: bash
+      run: |
+        echo "ℹ️ [install-hps] Starting HPS installation..."
+        pip install --upgrade pip
+        pip install click httpx
+        pip install --pre "ansys-saf-testing[hps]==${SAF_TESTING_VERSION}" -r "${GITHUB_WORKSPACE}/dependencies.txt"
+
+        python -m ansys.saf.testing.hps.scripts.hps_installer install-hps
+        python -m ansys.saf.testing.hps.scripts.hps_installer login
+        echo "ℹ️ [install-hps] ... HPS installation completed."
+
+    - name: Pull images
+      id: pull-images
+      if: ${{ inputs.upgrade-docker == 'true' }}
+      env:
+        IMAGES_JSON: ${{ inputs.images-to-pull }}
+      shell: bash
+      run: |
+        echo "ℹ️ [pull-images] Starting image pull and mirror process..."
+        PRIVATE_REGISTRY=ghcr.io/${GITHUB_REPOSITORY}
+
+        # Process each image mapping from the input
+        echo "$IMAGES_JSON" | jq -r '.[] | "\(.image)|\(.private_image)"' | while IFS='|' read -r IMAGE PRIVATE_IMAGE_NAME; do
+            PRIVATE_IMAGE="$PRIVATE_REGISTRY/$PRIVATE_IMAGE_NAME"
+            echo ""
+            echo "=== Processing $IMAGE -> $PRIVATE_IMAGE ==="
+            if ! docker pull "$PRIVATE_IMAGE" 2>/dev/null; then
+                echo "⚠️ Not found in private registry, pulling from source..."
+                docker pull "$IMAGE"
+                docker tag "$IMAGE" "$PRIVATE_IMAGE"
+                docker push "$PRIVATE_IMAGE"
+            else
+                echo "✅ Already in private registry: $PRIVATE_IMAGE"
+            fi
+
+            docker tag "$PRIVATE_IMAGE" "$IMAGE"
+            docker rmi "$PRIVATE_IMAGE"
+        done
+
+        echo "ℹ️ [pull-images] ... image pull and mirror process completed."
+
+    - name: Display docker images
+      id: display-docker-images
+      if: ${{ inputs.upgrade-docker == 'true' }}
+      shell: bash
+      run: |
+        echo "ℹ️ [display-docker-images] Starting Docker images display..."
+        docker images
+        echo "ℹ️ [display-docker-images] ... Docker images display completed."

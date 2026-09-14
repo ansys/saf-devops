@@ -1,0 +1,2 @@
+security:
+  ignore-cvss-unknown-severity: False # True or False. We recommend you set this to False.

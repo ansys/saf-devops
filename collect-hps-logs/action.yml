@@ -1,0 +1,51 @@
+# Copyright (C) 2026 ANSYS, Inc. and/or its affiliates.
+# SPDX-License-Identifier: Apache-2.0
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: Collect HPS logs
+
+description: |
+  Collect HPS logs
+inputs:
+  artifact-prefix:
+    description: "Artifact prefix"
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+    - name: Copy folders starting with /tmp/hps_* in workspace
+      shell: bash
+      run: |
+        mkdir ${GITHUB_WORKSPACE}/hps_evaluator_files
+        cp -r /tmp/hps_* ${GITHUB_WORKSPACE}/hps_evaluator_files
+
+    - name: Publish evaluator logs
+      uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+      with:
+        name: "${{ inputs.artifact-prefix }}_hps_evaluator_logs"
+        path: "${{ github.workspace }}/hps_evaluator_files"
+
+    - name: Publish scaler logs
+      uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+      with:
+        name: "${{ inputs.artifact-prefix }}_hps_scaler_logs"
+        path: "~/.ansys/rep/scaling"
+
+    - name: Publish docker compose logs
+      uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+      with:
+        name: "${{ inputs.artifact-prefix }}_hps_docker_compose_logs"
+        path: hps_deployment_logs.txt

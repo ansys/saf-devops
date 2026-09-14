@@ -1,0 +1,182 @@
+# Copyright (C) 2026 ANSYS, Inc. and/or its affiliates.
+# SPDX-License-Identifier: Apache-2.0
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: _doc_build
+
+permissions: {}
+
+on:
+  workflow_call:
+    inputs:
+      python-version:
+        description: "Python version to use."
+        type: string
+        required: true
+      poetry-version:
+        description: "Poetry version."
+        type: string
+        required: false
+        default: ""
+      # Required with default
+      poetry-parent-directory:
+        description: "Parent directory for the poetry project."
+        type: string
+        default: '.'
+      doc-directory:
+        description: "Directory containing the documentation source files."
+        type: string
+        default: 'doc'
+      # Optional
+      gh-pages-cname:
+        description: "CNAME record for the gh-pages branch."
+        type: string
+        required: false
+        default: ''
+      gh-pages-doc-artifact-name:
+        description: "Name of the gh-pages documentation artifact name."
+        type: string
+        required: false
+        default: ''
+      ref:
+        description: "Reference to checkout. Default: github.ref"
+        type: string
+        required: false
+        default: ''
+      poetry-install-args:
+        description: "Additional arguments for poetry install when building docs."
+        type: string
+        required: false
+        default: '--only doc -vv'
+      sphinx-build-args:
+        description: "Additional arguments for sphinx-build when building docs."
+        type: string
+        required: false
+        default: '--color -vW -bhtml -t external -t gh-pages'
+      check-links:
+        description: "Check for broken links in the documentation."
+        type: boolean
+        required: false
+        default: false
+      env-vars:
+        description: "Additional environment variables. Format: 'var-1: val-1\nvar-2:
+          val-2' (YAML-like format)"
+        type: string
+        required: false
+        default: ""
+    secrets:
+      PYANSYS_PRIVATE_PYPI_PAT:
+        description: "Personal Access Token for private PyPI"
+        required: false
+
+env:
+  POETRY_HTTP_BASIC_SOLUTIONS_PRIVATE_PYPI_USERNAME: "PAT"
+  POETRY_HTTP_BASIC_SOLUTIONS_PRIVATE_PYPI_PASSWORD: ${{ secrets.PYANSYS_PRIVATE_PYPI_PAT
+    }}
+  POETRY_HTTP_BASIC_PYANSYS_PRIVATE_PYPI_USERNAME: "PAT"
+  POETRY_HTTP_BASIC_PYANSYS_PRIVATE_PYPI_PASSWORD: ${{ secrets.PYANSYS_PRIVATE_PYPI_PAT
+    }}
+
+jobs:
+  check-doc-style:
+    permissions:
+      contents: read # To read the repository content
+    name: Check doc style with Vale
+    if: inputs.gh-pages-doc-artifact-name != '' && inputs.gh-pages-cname != ''
+    runs-on: ubuntu-latest
+    steps:
+      - name: Documentation style checks
+        uses: ansys/actions/doc-style@3ad3b285bd9b67045477dafc7f9865a3aa39f692 # v11.0.6
+        with:
+          token: ${{ github.token }}
+          vale-version: ${{ vars.VALE_VERSION != '' && vars.VALE_VERSION || '2.30.0'
+            }}
+
+  build-doc:
+    permissions:
+      contents: read # To read the repository content
+    name: Build doc
+    runs-on: ubuntu-latest
+    if: inputs.gh-pages-doc-artifact-name != '' && inputs.gh-pages-cname != ''
+    env:
+      CNAME: ${{ inputs.gh-pages-cname }}
+      DOC_SOURCE_DIRECTORY: ${{ inputs.doc-directory }}/source
+      DOC_BUILD_GH_PAGES_DIRECTORY: ${{ inputs.doc-directory }}/build-gh-pages
+    steps:
+      - name: Set environment variables
+        if: ${{ inputs.env-vars != '' }}
+        shell: bash
+        run: | # zizmor: ignore[template-injection] - trusted usage for environment variables
+          # Convert YAML-like format (var-1: val-1) to environment variables
+          echo "${{ inputs.env-vars }}" | while IFS=': ' read -r key value; do
+            if [[ -n "$key" && -n "$value" ]]; then
+              # Remove leading/trailing whitespace and set environment variable
+              key=$(echo "$key" | xargs)
+              value=$(echo "$value" | xargs)
+              echo "${key}=${value}" >> $GITHUB_ENV
+            fi
+          done
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref != '' && inputs.ref || github.ref }}
+          persist-credentials: false
+
+      - uses: ansys/saf-devops/prepare-python-environment@v1
+        id: prepare-python-environment
+        with:
+          python-version: ${{ inputs.python-version }}
+          poetry-version: ${{ inputs.poetry-version != '' && inputs.poetry-version
+            || vars.POETRY_VERSION }}
+          poetry-install-args: ${{ inputs.poetry-install-args }}
+          python-project-path: ${{ inputs.poetry-parent-directory }}
+
+      - name: Build gh-pages documentation with Sphinx
+        working-directory: ${{ inputs.poetry-parent-directory }}
+        shell: bash
+        run: |
+          ${VENV_PATH}/sphinx-build ${DOC_SOURCE_DIRECTORY} ${DOC_BUILD_GH_PAGES_DIRECTORY} ${SPHINX_BUILD_ARGS}
+        env:
+          VENV_PATH: ${{ steps.prepare-python-environment.outputs.venv-exe-location
+            }}
+          SPHINX_BUILD_ARGS: ${{ inputs.sphinx-build-args }}
+          DISABLE_GITHUB_URL_LINK: 'false'
+          DISABLE_VERSION_SWITCHER: 'false'
+
+      - name: Check brokenlinks
+        if: ${{ inputs.check-links }}
+        uses: ansys/saf-devops/check-doc-for-broken-links@v1
+        with:
+          build-directory: ${{ env.DOC_BUILD_GH_PAGES_DIRECTORY }}
+          linkcheckerrc-file: ${{ inputs.doc-directory }}/linkcheckerrc
+          report-artifact-name: ${{ inputs.gh-pages-doc-artifact-name }}-linkcheck-report
+
+      - name: Add empty .nojekyll file
+        if: ${{ inputs.gh-pages-cname != '' && inputs.gh-pages-doc-artifact-name !=
+          '' }}
+        working-directory: ${{ inputs.poetry-parent-directory }}
+        shell: bash
+        run: |
+          touch "${DOC_BUILD_GH_PAGES_DIRECTORY}/.nojekyll"
+
+      - name: Upload gh-pages documentation artifact
+        if: ${{ inputs.gh-pages-cname != '' && inputs.gh-pages-doc-artifact-name !=
+          '' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ inputs.gh-pages-doc-artifact-name }}
+          path: ${{ env.DOC_BUILD_GH_PAGES_DIRECTORY }}
+          if-no-files-found: error

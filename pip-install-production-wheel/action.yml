@@ -1,0 +1,60 @@
+# Copyright (C) 2026 ANSYS, Inc. and/or its affiliates.
+# SPDX-License-Identifier: Apache-2.0
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: "pip-install-production-wheel"
+
+description: "Install production wheel using pip."
+
+inputs:
+  python-version:
+    description: "Python version"
+    type: string
+    required: true
+  wheel-artifact:
+    description: "Wheel artifact name"
+    type: string
+    required: true
+  extras-to-install:
+    description: "Extras to install"
+    type: string
+    required: false
+    default: all
+
+runs:
+  using: "composite"
+  steps:
+    - name: Download wheel
+      uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      with:
+        name: ${{ inputs.wheel-artifact }}
+        path: wheel
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+      with:
+        ignore-empty-workdir: true
+
+    - name: Install wheel (uv)
+      shell: bash
+      run: |
+        uv venv .venv --python ${PYTHON_VERSION}
+        wheel_file=$(find ./wheel -name "*.whl")
+        uv pip install "$wheel_file${EXTRAS}" --no-cache-dir --pre --index-strategy unsafe-best-match
+      env:
+        PYTHON_VERSION: ${{ inputs.python-version }}
+        EXTRAS: ${{ inputs.extras-to-install != '' && format('[{0}]', inputs.extras-to-install)
+          || '' }}
+        UV_DEFAULT_INDEX: https://pypi.org/simple/

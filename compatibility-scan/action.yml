@@ -1,0 +1,154 @@
+# Copyright (C) 2026 ANSYS, Inc. and/or its affiliates.
+# SPDX-License-Identifier: Apache-2.0
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: Compatibility Scan
+
+description: |
+  Check if the package can be installed with the packages
+  listed in the compatibility-packages input without dependency conflicts.
+
+inputs:
+  python-version:
+    description: "Version of Python to be used."
+    required: true
+  wheel-artifact-name:
+    description: "Name of the artifact containing the wheel(s) to be tested for compatibility."
+    required: false
+    default: ""
+  compatibility-packages:
+    description: "List of packages to be tested against for compatibility for the
+      built package."
+    required: true
+  working-directory:
+    description: "Working directory."
+    required: false
+    default: "."
+  scan-summary-artifact-name:
+    description: "Name of the compatibility scan summary artifact."
+    required: false
+    default: "compatibility-scan-summary"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Setup Python
+      id: setup-python
+      uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v6.1.0
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Download artifacts
+      uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
+      with:
+        name: ${{ inputs.wheel-artifact-name }}
+        path: ${{ runner.temp }}/artifacts
+
+    - name: Create .venv
+      working-directory: ${{ inputs.working-directory }}
+      shell: bash
+      run: |
+        ${PYTHON_PATH} -m venv .venv
+
+        if [[ "${RUNNER_OS}" == "Windows" ]]; then
+          echo VENV_PYTHON_PATH=.venv/Scripts/python >> $GITHUB_ENV
+        else
+          echo VENV_PYTHON_PATH=.venv/bin/python >> $GITHUB_ENV
+        fi
+      env:
+        PYTHON_PATH: ${{ steps.setup-python.outputs.python-path }}
+
+    - name: Check if all packages can be installed by pip
+      working-directory: ${{ inputs.working-directory }}
+      shell: bash
+      env:
+        PACKAGES: ${{ inputs.compatibility-packages }}
+        SUMMARY_FILE: ${{ inputs.scan-summary-artifact-name }}.html
+        TEMPLATE_FILE: ${{ github.action_path }}/template.html
+      run: |
+        SCAN_FAILED=0
+        TOTAL_WHEELS=0
+        FAILED_WHEELS=0
+        PASSED_WHEEL_LIST=""
+        FAILED_WHEEL_LIST=""
+        CONFLICT_SECTION=""
+
+        if ! find "${RUNNER_TEMP}/artifacts" -name "*.whl" -type f -print -quit | grep -q .; then
+          echo "<p class=\"failed\">No wheel artifacts were found in ${RUNNER_TEMP}/artifacts.</p>" > "${SUMMARY_FILE}"
+          exit 1
+        fi
+
+        while IFS= read -r -d '' WHEEL_FILE; do
+          INSTALL_LOG_FILE=$(mktemp)
+          WHEEL_NAME=$(basename "${WHEEL_FILE}")
+          TOTAL_WHEELS=$((TOTAL_WHEELS + 1))
+
+          if ! ${VENV_PYTHON_PATH} -m pip install --pre "${WHEEL_FILE}[all]" ${PACKAGES} > "${INSTALL_LOG_FILE}" 2>&1; then
+            SCAN_FAILED=1
+            FAILED_WHEELS=$((FAILED_WHEELS + 1))
+            FAILED_WHEEL_LIST+="<li>${WHEEL_NAME}</li>"
+
+            CONFLICT_DETAILS=$(grep -E '^ERROR: Cannot install|^The conflict is caused by:|^.+ depends on .+' "${INSTALL_LOG_FILE}" || true)
+            if [[ -z "${CONFLICT_DETAILS}" ]]; then
+              CONFLICT_DETAILS=$(tail -n 50 "${INSTALL_LOG_FILE}")
+            fi
+            ESCAPED=$(printf '%s' "${CONFLICT_DETAILS}" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g')
+            CONFLICT_SECTION+="<details><summary>Dependency conflict for ${WHEEL_NAME}</summary><pre>${ESCAPED}</pre></details>"
+          else
+            PASSED_WHEEL_LIST+="<li>${WHEEL_NAME}</li>"
+          fi
+
+          rm -f "${INSTALL_LOG_FILE}"
+        done < <(find "${RUNNER_TEMP}/artifacts" -name "*.whl" -type f -print0)
+
+        PASSED_WHEELS=$((TOTAL_WHEELS - FAILED_WHEELS))
+
+        if [[ ${FAILED_WHEELS} -eq 0 ]]; then
+          STATUS_CLASS="success"
+          STATUS_LABEL="success"
+        else
+          STATUS_CLASS="failed"
+          STATUS_LABEL="failed"
+        fi
+
+        if [[ ${SCAN_FAILED} -eq 0 ]]; then
+          WHEELS_SECTION="<h2>Installed wheel(s)</h2><ul>${PASSED_WHEEL_LIST}</ul>"
+        else
+          WHEELS_SECTION="<h2>Wheels with dependency conflicts</h2><ul>${FAILED_WHEEL_LIST}</ul>${CONFLICT_SECTION}"
+          if [[ -n "${PASSED_WHEEL_LIST}" ]]; then
+            WHEELS_SECTION+="<h2>Wheels installed successfully</h2><ul>${PASSED_WHEEL_LIST}</ul>"
+          fi
+        fi
+
+        export PACKAGES STATUS_CLASS STATUS_LABEL TOTAL_WHEELS PASSED_WHEELS FAILED_WHEELS WHEELS_SECTION
+        envsubst < "${TEMPLATE_FILE}" > "${SUMMARY_FILE}"
+
+        exit ${SCAN_FAILED}
+
+    - name: Upload compatibility scan summary artifact
+      if: always()
+      uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+      with:
+        name: ${{ inputs.scan-summary-artifact-name}}
+        path: ${{ inputs.scan-summary-artifact-name }}.html
+        if-no-files-found: error
+
+    - name: Delete virtual environments
+      if: always()
+      working-directory: ${{ inputs.working-directory }}
+      shell: bash
+      run: |
+        rm -rf .venv
+      continue-on-error: true

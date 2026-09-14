@@ -1,0 +1,20 @@
+
+/node_modules
+package-lock.json
+.python-version
+/.poetry
+*.pyc
+/.vscode
+/.venv
+
+
+# Sphinx documentation
+doc/build/
+
+legal-notice
+artifacts_py
+
+# Latex
+*.pdf
+*.tex
+.coverage

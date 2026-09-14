@@ -1,0 +1,10 @@
+[allowlist]
+description = "Allow documented Docker image tags that resemble API keys"
+condition = "AND"
+paths = [
+  '''prepare-runner-for-tests/action\.yml''',
+]
+regexes = [
+  '''"image": "eqalpha/keydb:alpine_x86_64_v6\.3\.3"''',
+  '''"private_image": "keydb:alpine_x86_64_v6\.3\.3"''',
+]

@@ -1,0 +1,93 @@
+# Copyright (C) 2026 ANSYS, Inc. and/or its affiliates.
+# SPDX-License-Identifier: Apache-2.0
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: "Generate SBOM"
+
+description: |
+  Generate a Software Bill of Materials (SBOM) for the Project.
+
+  # Note!
+  If connections to private PyPI servers are needed,
+  credentials are assumed to be declared in the workflow file
+  as environment variable following Poetry standard.
+
+  ## For Solutions private PyPI:
+  POETRY_HTTP_BASIC_SOLUTIONS_PRIVATE_PYPI_USERNAME: "PAT"
+  POETRY_HTTP_BASIC_SOLUTIONS_PRIVATE_PYPI_PASSWORD: <solutions-private-pypi-token>
+
+  ## For PyAnsys private PyPI:
+  POETRY_HTTP_BASIC_PYANSYS_PRIVATE_PYPI_USERNAME: "PAT"
+  POETRY_HTTP_BASIC_PYANSYS_PRIVATE_PYPI_PASSWORD: <pyansys-private-pypi-token>
+
+inputs:
+  # Required
+  poetry-version:
+    description: "Poetry version to use."
+    required: true
+    type: string
+  # Required with default
+  poetry-parent-directory:
+    description: "Parent directory for the poetry project."
+    type: string
+    default: '.'
+
+runs:
+  using: "composite"
+  steps:
+    - name: Checkout project
+      uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+      with:
+        persist-credentials: false
+
+    - uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v6.1.0
+      id: setup-python
+      with:
+        python-version: '3.12'
+
+    - name: Install SBOM Generation Dependencies
+      working-directory: ${{ inputs.poetry-parent-directory }}
+      shell: bash
+      run: ${PYTHON_PATH} -m pip install -r ${REQUIREMENTS_PATH}
+      env:
+        PYTHON_PATH: ${{ steps.setup-python.outputs.python-path }}
+        REQUIREMENTS_PATH: ${{ github.action_path }}/requirements.txt
+
+    - name: Retrieve Project information
+      id: retrieve-info
+      uses: ansys/saf-devops/get-information-from-pyproject@v1
+      with:
+        pyproject-path: ${{ inputs.poetry-parent-directory }}/pyproject.toml
+
+    - name: Generate SBOM
+      working-directory: ${{ inputs.poetry-parent-directory }}
+      shell: bash
+      run: |
+        chmod +x ${SCRIPTS_PATH}
+        ${PYTHON_PATH} ${SCRIPTS_PATH}
+      env:
+        PYTHON_PATH: ${{ steps.setup-python.outputs.python-path }}
+        SCRIPTS_PATH: ${{ github.action_path }}/generate-sbom.py
+        POETRY_VERSION: ${{ inputs.poetry-version }}
+        PROJECT_VERSION: ${{ steps.retrieve-info.outputs.package-version }}
+        PROJECT_NAME: ${{ steps.retrieve-info.outputs.package-name }}
+
+    - name: Upload SBOM to CI session
+      uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+      with:
+        name: sbom-${{ steps.retrieve-info.outputs.package-name }}-${{ steps.retrieve-info.outputs.package-version
+          }}
+        path: ${{ inputs.poetry-parent-directory }}/sbom.json
+        if-no-files-found: error

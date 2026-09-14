@@ -1,0 +1,102 @@
+
+# Copyright (C) 2026 ANSYS, Inc. and/or its affiliates.
+# SPDX-License-Identifier: Apache-2.0
+#
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: (repo) PRs
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, edited, labeled]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+
+  # TODO: Review and uncomment this section if you want to enable manual approval for dependabot PRs.
+  # NOTE: We do not allow dependabot to trigger the CI/CD pipeline automatically.
+  # This is to mitigate supply chain attacks, where a malicious dependency update
+  # could execute arbitrary code in our build environment.
+  # Dependabot PRs must be reviewed carefully and approved manually before
+  # running the CI.
+  # check-dependabot-pr:
+  #   needs: [check-environment-approval]
+  #   name: Manual approval (on dependabot PRs)
+  #   runs-on: ubuntu-latest
+  #   environment: ${{ needs.check-environment-approval.outputs.environment }}
+  #   steps:
+  #     - name: Proceed after approval
+  #       if: ${{ needs.check-environment-approval.outputs.environment == 'dependabot'}}
+  #       run: |
+  #         echo "::notice::Workflow approved."
+  #     - name: Approval skipped
+  #       if: ${{ needs.check-environment-approval.outputs.environment == ''}}
+  #       run: |
+  #         echo "::notice::Workflow approval skipped."
+
+  labeler:
+    name: "Labels"
+    # needs: check-dependabot-pr
+    permissions:
+      contents: read
+      pull-requests: write # Needed to add existing labels to PRs
+      issues: write # Needed to create labels that do not already exist
+    runs-on: ubuntu-latest
+    steps:
+
+      - name: "Checkout project"
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: "Sync labels"
+        uses: micnncim/action-label-syncer@3abd5ab72fda571e69fffd97bd4e0033dd5f495c # v1.3.0
+        with:
+          prune: false
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: "Label pull-request"
+        # HACK: skip if contributor does not have write permissions (forks)
+        if: github.event.pull_request.head.repo.full_name == github.repository
+        uses: actions/labeler@bf12e9b00b37c5c0ca2b87b79b2daf7891dbda13 # v7.0.0
+        with:
+          repo-token: ${{ github.token }}
+
+  code-style:
+    name: "Code style"
+    runs-on: ubuntu-latest
+    needs: labeler
+    steps:
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: "Run code style checks"
+        uses: ansys/actions/code-style@3ad3b285bd9b67045477dafc7f9865a3aa39f692 # v11.0.6
+        with:
+          python-version: '3.12'
+          use-python-cache: false
+          checkout: false
+
+  action-lint:
+    name: "Action lint"
+    uses: ansys/saf-devops/.github/workflows/_action-lint.yml@v1
+    needs: labeler
