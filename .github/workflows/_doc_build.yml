@@ -98,7 +98,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Documentation style checks
-        uses: ansys/actions/doc-style@3ad3b285bd9b67045477dafc7f9865a3aa39f692 # v11.0.6
+        uses: ansys/actions/doc-style@7410037bfb276c79ae91eb3617b9f5d2876f0c94 # v11.0.8
         with:
           token: ${{ github.token }}
           vale-version: ${{ vars.VALE_VERSION != '' && vars.VALE_VERSION || '2.30.0'
