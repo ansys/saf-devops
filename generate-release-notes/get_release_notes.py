@@ -38,6 +38,13 @@ SECTION_TITLE_PER_KEYWORD = {
     "perf": "⚡ Performance",
     "fix": "🛠️ Fixes",
     "docs": "📚 Documentation",
+    "style": "💄 Style",
+    "refactor": "♻️ Refactoring",
+    "test": "🧪 Tests",
+    "build": "🏗️ Build",
+    "ci": "♾️ CI",
+    "chore": "🧹 Chores",
+    "revert": "⏪ Reverts"
 }
 
 
@@ -106,22 +113,10 @@ def generate_release_notes() -> None:
     release_notes = Path("release_notes.md")
     with release_notes.open("w") as fh:
         fh.write(MANUAL_SECTION_SEPARATOR + "\n")
-        fh.write("\n## Maintenance\n")
+
         if "dev" in target_release.release_name:
             fh.write(
                 "⚠️ This is a development release. It is not intended for production use and may contain unstable features.\n",
-            )
-        elif previous_release_found:
-            starting_date = (
-                datetime.now(timezone.utc)
-                if target_release.release_name.split("-")[0].endswith(".0")
-                else previous_release_date
-            )
-            maintenance_end_date = (starting_date + timedelta(days=180)).strftime(
-                "%Y-%m-%d"
-            )
-            fh.write(
-                f"🔧 This release is under maintenance until {maintenance_end_date}. Beyond that date, no further bug fixes or security patches will be released on that minor version.\n"
             )
 
         fh.write("\n# What's changed\n")
