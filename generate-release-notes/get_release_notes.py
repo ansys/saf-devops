@@ -85,7 +85,6 @@ def generate_release_notes() -> None:
         description="",
     )
 
-    previous_release_found = False
     try:
         previous_tag = (
             target_release.previous_tag_name
@@ -97,7 +96,6 @@ def generate_release_notes() -> None:
             previous_tag,
         )
         previous_release_date = previous_release.published_at
-        previous_release_found = True
     except IndexError:
         previous_release_date = datetime(1983, 3, 21, tzinfo=timezone.utc)
 
