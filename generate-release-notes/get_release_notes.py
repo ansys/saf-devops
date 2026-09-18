@@ -15,7 +15,7 @@
 # limitations under the License.
 
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -44,7 +44,7 @@ SECTION_TITLE_PER_KEYWORD = {
     "build": "🏗️ Build",
     "ci": "♾️ CI",
     "chore": "🧹 Chores",
-    "revert": "⏪ Reverts"
+    "revert": "⏪ Reverts",
 }
 
 
