@@ -54,16 +54,33 @@ inputs:
     required: false
     type: string
     default: "1.9.0"
+  skip-install:
+    description: "Whether to skip the installation of dependencies."
+    required: false
+    default: "false"
+    type: boolean
+  checkout:
+    description: "Whether to checkout the repository."
+    required: false
+    default: "true"
+    type: boolean
+  requirements-file:
+    description: "Path to the requirements file."
+    required: false
+    type: string
+    default: 'dependencies.txt'
 
 runs:
   using: "composite"
   steps:
     - name: Checkout repository
+      if: ${{ inputs.checkout == 'true' }}
       uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       with:
         persist-credentials: false
 
     - uses: ansys/saf-devops/prepare-python-environment@v1
+      if: ${{ inputs.skip-install != 'true' }}
       id: prepare-python-environment
       with:
         python-version: ${{ inputs.python-version }}
@@ -72,7 +89,7 @@ runs:
         python-project-path: ${{ inputs.poetry-parent-directory }}
 
     - name: Upgrade pip
-      if: ${{ inputs.upgrade-pip == 'true' }}
+      if: ${{ inputs.upgrade-pip == 'true' && inputs.skip-install != 'true' }}
       working-directory: ${{ inputs.poetry-parent-directory }}
       shell: bash
       env:
@@ -80,15 +97,17 @@ runs:
       run: ${PYTHON_CMD} -m pip install --upgrade pip
 
     - name: Install poetry export plugin and export dependencies
+      if: ${{ inputs.skip-install != 'true' }}
       shell: bash
       working-directory: ${{ inputs.poetry-parent-directory }}
       env:
         POETRY_CMD: ${{ steps.prepare-python-environment.outputs.poetry-cmd }}
         POETRY_INSTALL_ARGS: ${{ inputs.poetry-install-args }}
         POETRY_PLUGIN_EXPORT_VERSION: ${{ inputs.poetry-plugin-export-version }}
+        REQUIREMENTS_FILE: ${{ inputs.requirements-file }}
       run: |
         ${POETRY_CMD} self add poetry-plugin-export@${POETRY_PLUGIN_EXPORT_VERSION}
-        ${POETRY_CMD} export -f requirements.txt --output dependencies.txt ${POETRY_INSTALL_ARGS} --without-hashes
+        ${POETRY_CMD} export -f requirements.txt --output ${REQUIREMENTS_FILE} ${POETRY_INSTALL_ARGS} --without-hashes
 
     - name: Install uv
       uses: astral-sh/setup-uv@ed21f2f24f8dd64503750218de024bcf64c7250a # v7.1.5
@@ -112,8 +131,9 @@ runs:
           || format('{0}/default_policy.yml', github.action_path) }}
         REPORT_FILE: info_safety.json
         UV_PROJECT_ENVIRONMENT: ${{ runner.temp }}/.venv_safety
+        DEPENDENCIES_FILE: ${{ inputs.requirements-file }}
       run: |
-        ${UV_PROJECT_ENVIRONMENT}/bin/safety check -o bare --policy-file ${POLICY_FILE_ARG} --save-json ${REPORT_FILE} --continue-on-error -r dependencies.txt 2>&1 \
+        ${UV_PROJECT_ENVIRONMENT}/bin/safety check -o bare --policy-file ${POLICY_FILE_ARG} --save-json ${REPORT_FILE} --continue-on-error -r "${DEPENDENCIES_FILE}" 2>&1 \
           | grep -v -E '^\+==|^$|DEPRECATED:.*has been DEPRECATED|encourage switching to the new'
       continue-on-error: true
 
