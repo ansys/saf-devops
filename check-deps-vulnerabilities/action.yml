@@ -79,7 +79,7 @@ runs:
       with:
         persist-credentials: false
 
-    - uses: snps-ansys-internal/saf-devops/prepare-python-environment@v1
+    - uses: ansys/saf-devops/prepare-python-environment@v1
       if: ${{ inputs.skip-install != 'true' }}
       id: prepare-python-environment
       with:
