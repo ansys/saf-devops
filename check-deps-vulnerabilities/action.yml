@@ -133,7 +133,7 @@ runs:
         UV_PROJECT_ENVIRONMENT: ${{ runner.temp }}/.venv_safety
         DEPENDENCIES_FILE: ${{ inputs.requirements-file }}
       run: |
-        ${UV_PROJECT_ENVIRONMENT}/bin/safety check -o bare --policy-file ${POLICY_FILE_ARG} --save-json ${REPORT_FILE} --continue-on-error -r ${DEPENDENCIES_FILE} 2>&1 \
+        ${UV_PROJECT_ENVIRONMENT}/bin/safety check -o bare --policy-file ${POLICY_FILE_ARG} --save-json ${REPORT_FILE} --continue-on-error -r "${DEPENDENCIES_FILE}" 2>&1 \
           | grep -v -E '^\+==|^$|DEPRECATED:.*has been DEPRECATED|encourage switching to the new'
       continue-on-error: true
 
