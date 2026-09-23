@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.0](https://github.com/ansys/saf-devops/compare/v1.1.0...v1.2.0) (2026-09-22)
+
+
+### Features
+
+* Allow requirement file input for check dependencies ([#4](https://github.com/ansys/saf-devops/issues/4)) ([b6f5cdb](https://github.com/ansys/saf-devops/commit/b6f5cdb91d27410f1f34116780a52028610fe053))
+* Requirements file ([e99cb81](https://github.com/ansys/saf-devops/commit/e99cb8161ae14738545690b724006d96a988d15a))
+
 ## [1.1.0](https://github.com/ansys/saf-devops/compare/v1.0.0...v1.1.0) (2026-09-18)
 
 
