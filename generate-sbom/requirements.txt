@@ -1,11 +1,11 @@
 arrow==1.4.0
 attrs==26.1.0
 boolean.py==5.0
-cyclonedx-bom==7.3.1
+cyclonedx-bom==7.4.0
 cyclonedx-python-lib==11.12.0
 defusedxml==0.7.1
 fqdn==1.5.1
-idna==3.19
+idna==3.20
 isoduration==20.11.0
 jsonpointer==3.1.1
 jsonschema==4.26.0
@@ -16,7 +16,7 @@ packageurl-python==0.17.6
 packaging==26.3
 pip-requirements-parser==32.0.1
 py-serializable==2.1.0
-pyparsing==3.3.2
+pyparsing==3.3.3
 python-dateutil==2.9.0.post0
 referencing==0.37.0
 rfc3339-validator==0.1.4
