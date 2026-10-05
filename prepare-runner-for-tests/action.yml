@@ -92,6 +92,7 @@ runs:
 
     - name: Clean-up hps log folder content
       id: cleanup-hps-logs
+      if: ${{ inputs.hps-version != '' }}
       shell: bash
       run: |
         echo "ℹ️ [cleanup-hps-logs] Starting HPS log folder cleanup..."
