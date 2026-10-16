@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.3.1](https://github.com/ansys/saf-devops/compare/v1.3.0...v1.3.1) (2026-10-16)
+
+
+### Bug Fixes
+
+* Set as github output ([23853d0](https://github.com/ansys/saf-devops/commit/23853d0a30e0301b7b129199c44c40cf2ca68d36))
+* Set as github output ([558e183](https://github.com/ansys/saf-devops/commit/558e18347ac4bb7ca2277526759443712ede4f0b))
+* Set as github output ([#13](https://github.com/ansys/saf-devops/issues/13)) ([e4e4880](https://github.com/ansys/saf-devops/commit/e4e4880251db80923c803542c40cde8ed354c35e))
+
 ## [1.3.0](https://github.com/ansys/saf-devops/compare/v1.2.0...v1.3.0) (2026-10-16)
 
 
