@@ -21,6 +21,7 @@ from typing import Any
 
 from github_pull_requests_manager import PullRequestManager
 from github_release_manager import ReleaseManager
+from github_utilities import set_as_github_outputs
 from release import ReleaseInformation
 
 MANUAL_SECTION_SEPARATOR = (
@@ -98,6 +99,8 @@ def generate_release_notes() -> None:
         previous_release_date = previous_release.published_at
     except IndexError:
         previous_release_date = datetime(1983, 3, 21, tzinfo=timezone.utc)
+
+    set_as_github_outputs("previous_release_date", previous_release_date.isoformat())
 
     pr_manager = PullRequestManager(context.repository)
     pull_requests = pr_manager.get_closed_pull_requests_since(

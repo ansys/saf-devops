@@ -26,6 +26,11 @@ inputs:
     type: string
     required: true
 
+outputs:
+  previous-release-date:
+    description: "The date of the previous release."
+    value: ${{ steps.generate-release-notes.outputs.previous_release_date }}
+
 runs:
   using: "composite"
   steps:
@@ -44,6 +49,7 @@ runs:
         PYTHON_PATH: ${{ steps.setup-python.outputs.python-path }}
 
     - name: Generate release notes
+      id: generate-release-notes
       shell: bash
       run: ${PYTHON_CMD} ${SCRIPT_PATH}
       env:
