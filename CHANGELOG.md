@@ -6,7 +6,7 @@
 ### Features
 
 * Add an output for the previous release date ([#11](https://github.com/ansys/saf-devops/issues/11)) ([f822342](https://github.com/ansys/saf-devops/commit/f822342ec1ec8a79fb0cf928b98a417b93ffda11))
-* Add output for the preivous release date ([51971bb](https://github.com/ansys/saf-devops/commit/51971bb450649ec0ffd7a26698068abd98cc0859))
+* Add output for the previous release date ([51971bb](https://github.com/ansys/saf-devops/commit/51971bb450649ec0ffd7a26698068abd98cc0859))
 
 
 ### Bug Fixes
