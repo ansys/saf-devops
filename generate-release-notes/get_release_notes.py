@@ -100,7 +100,7 @@ def generate_release_notes() -> None:
     except IndexError:
         previous_release_date = datetime(1983, 3, 21, tzinfo=timezone.utc)
 
-    set_as_github_outputs("previous_release_date", previous_release_date.isoformat())
+    set_as_github_outputs(previous_release_date=previous_release_date.isoformat())
 
     pr_manager = PullRequestManager(context.repository)
     pull_requests = pr_manager.get_closed_pull_requests_since(
