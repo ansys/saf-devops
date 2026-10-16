@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.3.0](https://github.com/ansys/saf-devops/compare/v1.2.0...v1.3.0) (2026-10-16)
+
+
+### Features
+
+* Add an output for the previous release date ([#11](https://github.com/ansys/saf-devops/issues/11)) ([f822342](https://github.com/ansys/saf-devops/commit/f822342ec1ec8a79fb0cf928b98a417b93ffda11))
+* Add output for the preivous release date ([51971bb](https://github.com/ansys/saf-devops/commit/51971bb450649ec0ffd7a26698068abd98cc0859))
+
+
+### Bug Fixes
+
+* Clean up hps directory only if needed ([5e835ba](https://github.com/ansys/saf-devops/commit/5e835ba86720483cd12b377eec833da76b46f9fb))
+* Clean up hps directory only if needed ([#7](https://github.com/ansys/saf-devops/issues/7)) ([4b1f5e7](https://github.com/ansys/saf-devops/commit/4b1f5e75f1eef200a8f54be589ba0976a520301d))
+
 ## [1.2.0](https://github.com/ansys/saf-devops/compare/v1.1.0...v1.2.0) (2026-09-22)
 
 
