@@ -100,10 +100,6 @@ runs:
         rm -rf /tmp/hps_* 2>/dev/null || true
         echo "ℹ️ [cleanup-hps-logs] ... HPS log folder cleanup completed."
 
-    - name: Collect Workflow Telemetry
-      if: runner.debug == '1'
-      uses: catchpoint/workflow-telemetry-action@94c3c3d9567a0205de6da68a76c428ce4e769af1 # v2.0.0
-
     - name: Install Docker
       if: ${{ inputs.docker-version != '' && runner.environment != 'self-hosted' }}
       env:
