@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.3.2](https://github.com/ansys/saf-devops/compare/v1.3.1...v1.3.2) (2026-10-19)
+
+
+### Bug Fixes
+
+* Remove catchpoint-workflow-telemetry-action ([#17](https://github.com/ansys/saf-devops/issues/17)) ([78c678b](https://github.com/ansys/saf-devops/commit/78c678babc6baf28d2a9ec669e8847567d2b8e2b))
+* Remove catchpoint/workflow-telemetry-action ([4f1e314](https://github.com/ansys/saf-devops/commit/4f1e314083465b277714ac2d77ad32d88841f09b))
+
 ## [1.3.1](https://github.com/ansys/saf-devops/compare/v1.3.0...v1.3.1) (2026-10-16)
 
 
