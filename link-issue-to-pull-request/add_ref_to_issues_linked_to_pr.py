@@ -39,7 +39,7 @@ def _is_pull_request_must_include_linked_issues(pull_request_title: str) -> bool
     """
     skipping_patterns = [
         r"^chore\(bump\):.*$",
-        r"^ci\(dependabot\):.*$",
+        r"^ci\(dependabot(?:-[^)]+)?\):.*$"
         r"^ci\(fix\):.*$",
         r"^ci\(chore\):.*$",
         r"^ci\(refactor\):.*$",
