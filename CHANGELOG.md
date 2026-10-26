@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.3.3](https://github.com/ansys/saf-devops/compare/v1.3.2...v1.3.3) (2026-10-26)
+
+
+### Bug Fixes
+
+* Allow more patterns for exception related to dependabot ([ea01a78](https://github.com/ansys/saf-devops/commit/ea01a78bd231b7a6910cbaf50075a5c33b02a0ac))
+* Allow more patterns for exception related to dependabot ([#19](https://github.com/ansys/saf-devops/issues/19)) ([ca867a2](https://github.com/ansys/saf-devops/commit/ca867a2554b691bea9e2cfb4b2f5a0a00219c80d))
+
 ## [1.3.2](https://github.com/ansys/saf-devops/compare/v1.3.1...v1.3.2) (2026-10-19)
 
 
