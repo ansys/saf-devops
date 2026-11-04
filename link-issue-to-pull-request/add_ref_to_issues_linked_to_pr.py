@@ -145,7 +145,9 @@ def add_ref_to_issues_linked_to_pr() -> None:
 
         # Check for code scanning alert pattern
         code_scanning_pattern = rf"{KEYWORD}\s+https://github\.com/{context.pull_request_repository}/security/code-scanning/\d+"
-        if re.search(code_scanning_pattern, pull_request_description, flags=re.IGNORECASE):
+        if re.search(
+            code_scanning_pattern, pull_request_description, flags=re.IGNORECASE
+        ):
             GitHubLogger.info(
                 title="CODE SCANNING ALERT",
                 message="Code scanning alert detected in PR description. Skipping linked issues requirement.",
