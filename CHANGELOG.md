@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.4.0](https://github.com/ansys/saf-devops/compare/v1.3.3...v1.4.0) (2026-11-04)
+
+
+### Features
+
+* Allow code scanning alert as related issue ([0160eb8](https://github.com/ansys/saf-devops/commit/0160eb88d5f587f05203dfcad52660270b007717))
+* Allow code scanning alert as related issue ([91734f1](https://github.com/ansys/saf-devops/commit/91734f1229f9b50af4afd66a52ce11e7c3c5ae6c))
+* Allow code scanning alerts as related issue ([#23](https://github.com/ansys/saf-devops/issues/23)) ([d772aa4](https://github.com/ansys/saf-devops/commit/d772aa4205f944780a01b4defb4393c4daeb17f1))
+
 ## [1.3.3](https://github.com/ansys/saf-devops/compare/v1.3.2...v1.3.3) (2026-10-26)
 
 
