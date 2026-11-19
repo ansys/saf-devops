@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.0](https://github.com/ansys/saf-devops/compare/v1.4.0...v1.5.0) (2026-11-19)
+
+
+### Features
+
+* Added UV commands to the saf-build action ([#29](https://github.com/ansys/saf-devops/issues/29)) ([62dc526](https://github.com/ansys/saf-devops/commit/62dc5266127ffccdbf068cd96550487c1595f95b))
+
 ## [1.4.0](https://github.com/ansys/saf-devops/compare/v1.3.3...v1.4.0) (2026-11-04)
 
 
