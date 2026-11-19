@@ -128,7 +128,12 @@ inputs:
 
   poetry-version:
     description: "Version of Poetry to be used."
-    required: true
+    required: false
+
+  use-uv:
+    description: "Use uv instead of Poetry to install and build the Python project."
+    required: false
+    default: "false"
 
   solution-display-name:
     description: "Display name of the solution."
@@ -157,6 +162,11 @@ inputs:
     description: "Arguments to be passed to 'poetry install' command."
     required: false
     default: "--only main -vv"
+
+  uv-install-args:
+    description: "Arguments to be passed to 'uv sync' command."
+    required: false
+    default: "--no-default-groups"
 
   saf-cli-reference:
     description: "Reference of saf-cli to use."
@@ -206,6 +216,23 @@ runs:
       uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v6.1.0
       with:
         python-version: ${{ inputs.python-version }}
+
+    - name: Validate Poetry version
+      if: ${{ inputs.use-uv != 'true' }}
+      env:
+        POETRY_VERSION: ${{ inputs.poetry-version }}
+      shell: bash
+      run: |
+        if [[ -z "${POETRY_VERSION}" ]]; then
+          echo "::error::poetry-version is required when use-uv is false."
+          exit 1
+        fi
+
+    - name: Setup uv
+      if: ${{ inputs.use-uv == 'true' }}
+      uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+      with:
+        enable-cache: true
 
     - name: Download package data artifact from CI session
       if: ${{ inputs.package-data-artifact != '' }}
@@ -281,6 +308,7 @@ runs:
 
     - uses: ansys/saf-devops/prepare-python-environment@v1
       id: prepare-python
+      if: ${{ inputs.use-uv != 'true' }}
       with:
         python-version: ${{ inputs.python-version }}
         poetry-version: ${{ inputs.poetry-version }}
@@ -323,24 +351,35 @@ runs:
     - name: Install production dependencies
       working-directory: ${{ inputs.working-directory }}
       env:
-        ACTIVATE_VENV_CMD: ${{ runner.os == 'Windows' && '.venv/Scripts/activate'
-          || '.venv/bin/activate' }}
+        USE_UV: ${{ inputs.use-uv }}
+        ACTIVATE_VENV_CMD: ${{ inputs.use-uv != 'true' && (runner.os == 'Windows'
+          && '.venv/Scripts/activate' || '.venv/bin/activate') || '' }}
         POETRY_INSTALL_ARGS: ${{ inputs.poetry-install-args }}
+        UV_INSTALL_ARGS: ${{ inputs.uv-install-args }}
       shell: bash
       run: |
-        source ${ACTIVATE_VENV_CMD}
-        poetry install ${POETRY_INSTALL_ARGS}
+        if [[ "${USE_UV}" == "true" ]]; then
+          uv sync --locked ${UV_INSTALL_ARGS}
+        else
+          source "${ACTIVATE_VENV_CMD}"
+          poetry install ${POETRY_INSTALL_ARGS}
+        fi
 
     - name: Install build dependencies
       working-directory: ${{ inputs.working-directory }}
       env:
-        ACTIVATE_VENV_CMD: ${{ runner.os == 'Windows' && '.venv/Scripts/activate'
-          || '.venv/bin/activate' }}
+        USE_UV: ${{ inputs.use-uv }}
+        ACTIVATE_VENV_CMD: ${{ inputs.use-uv != 'true' && (runner.os == 'Windows'
+          && '.venv/Scripts/activate' || '.venv/bin/activate') || '' }}
         DEPENDENCY_SOURCE: ${{ inputs.dependencies-source }}
         BUILD_DEPENDENCIES_GROUPS: ${{ inputs.build-dependencies-groups }}
+        VENV_PYTHON: ${{ runner.os == 'Windows' && '.venv/Scripts/python.exe' || '.venv/bin/python'
+          }}
       shell: bash
       run: |
-        source ${ACTIVATE_VENV_CMD}
+        if [[ -n "${ACTIVATE_VENV_CMD}" ]]; then
+          source "${ACTIVATE_VENV_CMD}"
+        fi
 
         # Normalize separators: convert commas to spaces for uniform processing
         NORMALIZED_SOURCE=$(echo "${DEPENDENCY_SOURCE}" | tr ',' ' ')
@@ -353,15 +392,32 @@ runs:
         fi
 
         if [[ "${NORMALIZED_SOURCE}" =~ build-system ]]; then
-          ui_group=$(grep -q '^\[tool\.poetry\.group\.ui\.' pyproject.toml && echo ",ui" || echo "")
-          build_dependencies="${BUILD_DEPENDENCIES_GROUPS},desktop${ui_group},doc"
-          echo "Installing build dependencies from groups: $build_dependencies"
-          poetry install --only "$build_dependencies" -vv
+          if [[ "${USE_UV}" == "true" ]]; then
+            build_groups=()
+            for group in ${BUILD_DEPENDENCIES_GROUPS//,/ }; do
+              build_groups+=(--group "$group")
+            done
+            build_groups+=(--group desktop --group doc)
+            HAS_UI_GROUP=$(python -c "import tomllib; print('true' if 'ui' in tomllib.load(open('pyproject.toml', 'rb')).get('dependency-groups', {}) else 'false')")
+            if [[ "${HAS_UI_GROUP}" == "true" ]]; then
+              build_groups+=(--group ui)
+            fi
+            uv sync --locked --no-default-groups "${build_groups[@]}"
+          else
+            ui_group=$(grep -q '^\[tool\.poetry\.group\.ui\.' pyproject.toml && echo ",ui" || echo "")
+            build_dependencies="${BUILD_DEPENDENCIES_GROUPS},desktop${ui_group},doc"
+            echo "Installing build dependencies from groups: $build_dependencies"
+            poetry install --only "$build_dependencies" -vv
+          fi
         fi
 
         if [[ "${NORMALIZED_SOURCE}" =~ requirements-file ]]; then
           echo "Installing build dependencies from requirements file"
-          python -m pip install -r requirements/requirements_build.txt
+          if [[ "${USE_UV}" == "true" ]]; then
+            uv pip install --python "${VENV_PYTHON}" -r requirements/requirements_build.txt
+          else
+            python -m pip install -r requirements/requirements_build.txt
+          fi
         fi
 
     - name: Render mustache template(s)
@@ -384,16 +440,20 @@ runs:
 
     - name: Build wheel
       working-directory: ${{ inputs.working-directory }}
-      shell: bash
       env:
-        ACTIVATE_VENV_CMD: ${{ runner.os == 'Windows' && '.venv/Scripts/activate'
-          || '.venv/bin/activate' }}
+        BUILD_COMMAND: ${{ inputs.use-uv == 'true' && 'uv build' || 'poetry build'
+          }}
+        ACTIVATE_VENV_CMD: ${{ inputs.use-uv != 'true' && (runner.os == 'Windows'
+          && '.venv/Scripts/activate' || '.venv/bin/activate') || '' }}
+      shell: bash
       run: |
-        source ${ACTIVATE_VENV_CMD}
-
-        poetry build
+        if [[ -n "${ACTIVATE_VENV_CMD}" ]]; then
+          source "${ACTIVATE_VENV_CMD}"
+        fi
+        ${BUILD_COMMAND}
 
     - name: Export requirements to txt file
+      if: ${{ inputs.use-uv != 'true' }}
       working-directory: ${{ inputs.working-directory }}
       shell: bash
       env:
@@ -405,25 +465,46 @@ runs:
         poetry self add poetry-plugin-export@${PLUGIN_VERSION}
         poetry export --without-hashes --format requirements.txt | grep -v "extra-index-url" > requirements.txt
 
+    - name: Export requirements with uv
+      if: ${{ inputs.use-uv == 'true' }}
+      working-directory: ${{ inputs.working-directory }}
+      shell: bash
+      run: uv export --locked --no-hashes --no-emit-project --no-default-groups >
+        requirements.txt
+
     - name: Check if package will render correctly in PyPI
       working-directory: ${{ inputs.working-directory }}
       env:
-        ACTIVATE_VENV_CMD: ${{ runner.os == 'Windows' && '.venv/Scripts/activate'
-          || '.venv/bin/activate' }}
+        USE_UV: ${{ inputs.use-uv }}
+        ACTIVATE_VENV_CMD: ${{ inputs.use-uv != 'true' && (runner.os == 'Windows'
+          && '.venv/Scripts/activate' || '.venv/bin/activate') || '' }}
+        VENV_PYTHON: ${{ runner.os == 'Windows' && '.venv/Scripts/python.exe' || '.venv/bin/python'
+          }}
       shell: bash
       run: |
-        source ${ACTIVATE_VENV_CMD}
-        poetry run python -m twine check dist/*
+        if [[ "${USE_UV}" == "true" ]]; then
+          "${VENV_PYTHON}" -m twine check dist/*
+        else
+          source "${ACTIVATE_VENV_CMD}"
+          poetry run python -m twine check dist/*
+        fi
 
     - name: Check if package installation works fine
       working-directory: ${{ inputs.working-directory }}
       env:
-        ACTIVATE_VENV_CMD: ${{ runner.os == 'Windows' && '.venv/Scripts/activate'
-          || '.venv/bin/activate' }}
+        USE_UV: ${{ inputs.use-uv }}
+        ACTIVATE_VENV_CMD: ${{ inputs.use-uv != 'true' && (runner.os == 'Windows'
+          && '.venv/Scripts/activate' || '.venv/bin/activate') || '' }}
+        VENV_PYTHON: ${{ runner.os == 'Windows' && '.venv/Scripts/python.exe' || '.venv/bin/python'
+          }}
       shell: bash
       run: |
-        source ${ACTIVATE_VENV_CMD}
-        python -m pip install dist/*.whl -r requirements.txt
+        if [[ "${USE_UV}" == "true" ]]; then
+          uv pip install --python "${VENV_PYTHON}" dist/*.whl -r requirements.txt
+        else
+          source "${ACTIVATE_VENV_CMD}"
+          python -m pip install dist/*.whl -r requirements.txt
+        fi
 
     - name: Move requirements.txt to dist folder
       working-directory: ${{ inputs.working-directory }}
