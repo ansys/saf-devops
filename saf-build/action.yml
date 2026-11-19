@@ -386,8 +386,8 @@ runs:
 
         # Validate that dependency source contains only build-system and/or requirements-file
         if ! [[ "${NORMALIZED_SOURCE}" =~ ^(build-system|requirements-file)( (build-system|requirements-file))*$ ]]; then
-          echo "Unknown source of build dependencies: ${DEPENDENCY_SOURCE}" >&2
-          echo "Must contain 'build-system' and/or 'requirements-file' (comma separated if both, no spaces)." >&2
+          echo "Unknown source of build dependencies: ${DEPENDENCY_SOURCE}"
+          echo "Must contain 'build-system' and/or 'requirements-file' (comma separated if both, no spaces)."
           exit 1
         fi
 
